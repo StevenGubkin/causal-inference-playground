@@ -1,4 +1,10 @@
-import Plot from 'react-plotly.js';
+import PlotModule from 'react-plotly.js';
+
+// Vite's CJS->ESM interop for this package double-wraps the export --
+// `import Plot from 'react-plotly.js'` otherwise resolves to the raw
+// `{ __esModule: true, default: PlotComponent }` object rather than the
+// component itself, which crashes React with "Element type is invalid".
+const Plot = ((PlotModule as unknown as { default?: typeof PlotModule }).default ?? PlotModule) as typeof PlotModule;
 
 interface ComparisonChartProps {
   xs: Float64Array;
