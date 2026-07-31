@@ -1,0 +1,17 @@
+{
+  "name": "estimators",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Estimator registry, implementations, and the identifiability gate (ARCHITECTURE.md §8). Ships standalone as @TODO/causal-estimators once ready (README.md).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "graph": "*",
+    "scm-dsl": "*",
+    "scm-engine": "*"
+  }
+}

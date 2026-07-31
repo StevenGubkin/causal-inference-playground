@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/scm-dsl" },
+    { "path": "packages/graph" },
+    { "path": "packages/scm-engine" },
+    { "path": "packages/estimators" },
+    { "path": "packages/share" },
+    { "path": "packages/validation" },
+    { "path": "packages/app" }
+  ]
+}

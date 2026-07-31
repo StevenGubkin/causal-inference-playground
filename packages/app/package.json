@@ -1,0 +1,33 @@
+{
+  "name": "app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.3.0",
+    "estimators": "*",
+    "graph": "*",
+    "mathjs": "^15.2.0",
+    "mathlive": "^0.110.0",
+    "plotly.js": "^2.35.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "react-plotly.js": "^2.6.0",
+    "scm-dsl": "*",
+    "scm-engine": "*",
+    "share": "*"
+  },
+  "devDependencies": {
+    "@types/plotly.js": "^2.35.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/react-plotly.js": "^2.6.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "vite": "^8.2.0"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "examples",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Gallery models (.scm) and precomputed expected-answer fixtures (ARCHITECTURE.md §13, §17 Phase 0)."
+}

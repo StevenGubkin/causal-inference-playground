@@ -1,0 +1,16 @@
+{
+  "name": "scm-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Model IR, seeded sampling, and the interventional oracle (ARCHITECTURE.md §5–6). Ships standalone as @TODO/scm-engine once ready (README.md).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "graph": "*",
+    "scm-dsl": "*"
+  }
+}

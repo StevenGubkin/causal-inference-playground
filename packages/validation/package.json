@@ -1,0 +1,16 @@
+{
+  "name": "validation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-checks estimator/graph output against DoWhy, EconML, statsmodels, linearmodels, and dagitty fixtures (ARCHITECTURE.md §10b). Fixtures are precomputed and committed so this runs in CI without a Python runtime; scripts/ holds the (separate, Python) generators for provenance.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "validate": "echo 'no fixtures yet -- Phase 3 (ARCHITECTURE.md §17); see packages/validation/scripts' && exit 0"
+  },
+  "dependencies": {
+    "estimators": "*"
+  }
+}
