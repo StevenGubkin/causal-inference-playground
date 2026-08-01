@@ -162,20 +162,15 @@ Every node is a draw. Two surface forms:
   `eps` get *independent* noise. Sharing is never implicit.
 - **Named noise.** `noise U ~ Normal(0, 1)` declares a reusable exogenous term;
   referencing `U` in two equations makes it a shared unobserved cause (a confounder).
-- **Correlated-noise sugar.** `cov(X, Y) = c` — draws `X`'s and `Y`'s noise as a
-  joint pair with covariance `c`, while preserving each node's own marginal noise
-  variance exactly as declared (via `eps`/`noiseSD` or the stochastic node's own
-  distribution). This is **not** additional variance layered on top of existing
-  noise — it reshapes how the existing noise co-varies, it does not inflate it.
-  Implementation: a Cholesky factor of the pair's 2×2 covariance matrix
-  `[[σ_X², c], [c, σ_Y²]]`, equivalent to a shared latent loading onto each node
-  sized so the target covariance is hit without changing either node's total
-  variance. **INVARIANT (noise budget):** if a node participates in more than one
-  `cov()`/`<->` declaration, the combined loadings must not require more variance
-  than the node's own declared total (§4.8 rule 7) — this is what keeps an
-  arbitrary set of pairwise `cov()` declarations from implying an inconsistent
-  (non-positive-semidefinite) joint covariance structure, without needing a
-  separate global eigenvalue check.
+  This — or an explicit `latent NAME ~ Dist(...)` referenced by name in two
+  equations — is the one way to build correlated/confounded noise; there is no
+  separate covariance-target sugar. Reproducing a specific target covariance `c`
+  by hand is one line: a shared `latent U ~ Normal(0, 1)` with loadings
+  `λx = λy = sqrt(c)` (or opposite signs if `c < 0`) added into each equation
+  gives `Cov(X, Y) = λx·λy = c`. (An earlier `cov(X, Y) = c` sugar for this was
+  retired — it never got a real sampling implementation, and the only thing it
+  bought beyond the one-liner above was multi-declaration noise-budget
+  bookkeeping, a narrow convenience not worth the implementation cost.)
 
 ### 4.4 Latents and bidirected edges
 
@@ -190,11 +185,10 @@ Every node is a draw. Two surface forms:
 
 ```ebnf
 program      = { statement } ;
-statement    = comment | nodeDecl | noiseDecl | covDecl | biDecl ;
+statement    = comment | nodeDecl | noiseDecl | biDecl ;
 comment      = "#" , { any-char-except-newline } ;
 nodeDecl     = [ "latent" ] , IDENT , ( "=" , expr | "~" , distribution ) ;
 noiseDecl    = "noise" , IDENT , "~" , distribution ;
-covDecl      = "cov" , "(" , IDENT , "," , IDENT , ")" , "=" , number ;
 biDecl       = IDENT , "<->" , IDENT ;
 distribution = IDENT , "(" , [ expr , { "," , expr } ] , ")" ;
 expr         = (* infix arithmetic over IDENT/number/funcCall; RHS delegated to mathjs *) ;
@@ -202,7 +196,7 @@ IDENT        = letter , { letter | digit | "_" } ;
 ```
 
 Implementation: a small hand-written (or Chevrotain) **line-level** parser handles
-the statement forms (`~`, `=`, `latent`, `<->`, `cov`, `noise`); only the RHS
+the statement forms (`~`, `=`, `latent`, `<->`, `noise`); only the RHS
 **expressions** are handed to `mathjs.parse`. Do not try to make mathjs parse the
 whole DSL — the SCM-specific tokens aren't standard math.
 
@@ -240,10 +234,6 @@ Return either a `Model` IR or typed, author-facing errors:
    functions imported (no `import`, no matrix/unit constructors), and pin to a
    current, patched `mathjs` release. Treat a would-be sandbox escape as a security
    bug with a fixture in section 10a, not just a parser edge case.
-7. **Noise budget.** For every node touched by one or more `cov()`/`<->`
-   declarations, the sum of squared implied loadings does not exceed the node's
-   own declared noise variance; a violation is a typed parse-time error naming the
-   offending node and declarations, not a silent renormalization.
 
 ---
 

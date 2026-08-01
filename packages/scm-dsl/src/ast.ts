@@ -16,5 +16,4 @@ export type StatementAst =
   | { kind: 'node'; line: number; name: string; latent: boolean; form: 'deterministic'; expr: ExprSource }
   | { kind: 'node'; line: number; name: string; latent: boolean; form: 'stochastic'; dist: DistributionSource }
   | { kind: 'noise'; line: number; name: string; dist: DistributionSource }
-  | { kind: 'cov'; line: number; a: string; b: string; value: number }
   | { kind: 'bidirected'; line: number; a: string; b: string };

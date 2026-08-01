@@ -6,7 +6,6 @@ const STARTER_SOURCE = `# Write your own structural causal model.
 # eps                independent per-equation noise
 # latent NAME ...    hide this node from the observed sample
 # X <-> Y            unobserved confounder shared between X and Y
-# cov(X, Y) = 0.5    correlated noise between X and Y
 
 X ~ Normal(0, 1)
 Y = 2*X + eps

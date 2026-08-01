@@ -118,22 +118,7 @@ describe('§4.8 static validation rules', () => {
     expect(result.errors.some((e) => e.message.includes('no valid treatment/outcome pair'))).toBe(true);
   });
 
-  it('rule 7: rejects a cov() value outside the valid range', () => {
-    const result = parseModel('X ~ Normal(0, 1)\nY ~ Normal(0, 1)\ncov(X, Y) = 5');
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors.some((e) => e.message.includes('outside the valid range'))).toBe(true);
-  });
-
-  it('rule 7: accepts a cov() value within range and wires a shared latent parent', () => {
-    const result = parseModel('X ~ Normal(0, 1)\nY = X + eps\ncov(X, Y) = 0.5');
-    if (!result.ok) throw new Error(JSON.stringify(result.errors));
-    expect(result.model.parentsOf('X')).toContain('U_cov_X_Y');
-    expect(result.model.parentsOf('Y')).toContain('U_cov_X_Y');
-    expect(result.model.nodes.get('U_cov_X_Y')?.visibility).toBe('latent');
-  });
-
-  it('<->: wires a fresh independent latent parent with no budget check', () => {
+  it('<->: wires a fresh independent latent parent', () => {
     const result = parseModel('X ~ Normal(0, 1)\nY = X + eps\nX <-> Y');
     if (!result.ok) throw new Error(JSON.stringify(result.errors));
     expect(result.model.parentsOf('X')).toContain('U_X_Y');

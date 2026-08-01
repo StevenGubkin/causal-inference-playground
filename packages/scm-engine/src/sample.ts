@@ -13,7 +13,7 @@ export interface Sample {
   observed(): ObservedSample;
 }
 
-export function forwardSample(model: Model, n: number, rng: RNG): Sample {
+export function forwardSample(model: Model, n: number, rng: RNG, noiseSD = 1): Sample {
   const columns = new Map<NodeId, Float64Array>();
   for (const id of model.topoOrder) columns.set(id, new Float64Array(n));
 
@@ -21,7 +21,7 @@ export function forwardSample(model: Model, n: number, rng: RNG): Sample {
     const scope: Record<NodeId, number> = {};
     for (const id of model.topoOrder) {
       const node = model.nodes.get(id)!;
-      const value = node.kind === 'deterministic' ? evalWithNoise(node.expr!, scope, rng) : sampleDistribution(node.dist!, scope, rng);
+      const value = node.kind === 'deterministic' ? evalWithNoise(node.expr!, scope, rng, noiseSD) : sampleDistribution(node.dist!, scope, rng, noiseSD);
       scope[id] = value;
       columns.get(id)![row] = value;
     }

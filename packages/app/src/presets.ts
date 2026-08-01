@@ -2,6 +2,7 @@ import confoundingSrc from '../../examples/models/confounding.scm?raw';
 import colliderSrc from '../../examples/models/collider.scm?raw';
 import ivLateSrc from '../../examples/models/iv-late.scm?raw';
 import mediatorSrc from '../../examples/models/mediator.scm?raw';
+import nonlinearSrc from '../../examples/models/nonlinear.scm?raw';
 import simpsonSrc from '../../examples/models/simpson.scm?raw';
 
 export interface Preset {
@@ -53,5 +54,13 @@ export const PRESETS: Preset[] = [
     treatment: 'D',
     outcome: 'Y',
     caption: 'D and Y share an unobserved confounder U, so naive OLS is biased — 2SLS/LATE recovery is not wired up yet, just the bias is visible here.',
+  },
+  {
+    id: 'nonlinear',
+    label: 'Nonlinear dose-response (cos)',
+    source: nonlinearSrc,
+    treatment: 'X',
+    outcome: 'Y',
+    caption: 'The true curve is a cosine — a degree-1 fit can\'t represent that shape at all. Raise the basis degree (~6) and adjust for C to watch g-computation recover it.',
   },
 ];

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRNG, doContrast, doResponse, forwardSample } from 'scm-engine';
 import type { Curve } from 'scm-engine';
-import { fitSimpleLinearRegression, gcompDoseResponse, predictOverGrid } from 'estimators';
+import { fitMultivariateOLS, gcompDoseResponse } from 'estimators';
+import { backdoorValid, findBackdoorSet } from 'graph';
 import { parseModel } from 'scm-dsl';
 import { ComparisonChart } from './ComparisonChart';
 import { DagView } from './DagView';
@@ -40,6 +41,12 @@ function isApproximatelyLinear(curve: Curve): boolean {
   return true;
 }
 
+function rmseAgainstTruth(estimatedYs: number[], trueYs: number[]): number {
+  let sumSq = 0;
+  for (let i = 0; i < estimatedYs.length; i++) sumSq += (estimatedYs[i]! - trueYs[i]!) ** 2;
+  return Math.sqrt(sumSq / estimatedYs.length);
+}
+
 type Estimand = 'doseResponse' | 'ate';
 
 interface PlaygroundViewProps {
@@ -58,6 +65,8 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
   const [estimand, setEstimand] = useState<Estimand>('doseResponse');
   const [ateA, setAteA] = useState(0);
   const [ateB, setAteB] = useState(1);
+  const [degree, setDegree] = useState(1);
+  const [noiseSD, setNoiseSD] = useState(1);
 
   const debouncedSource = useDebouncedValue(source, SOURCE_DEBOUNCE_MS);
   const parsed = useMemo(() => parseModel(debouncedSource), [debouncedSource]);
@@ -91,12 +100,10 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     if (!parsed.ok || !effectiveTreatment || !effectiveOutcome || effectiveTreatment === effectiveOutcome) return null;
     const model = parsed.model;
 
-    const sample = forwardSample(model, SAMPLE_SIZE, createRNG(seed));
+    const sample = forwardSample(model, SAMPLE_SIZE, createRNG(seed), noiseSD);
     const observed = sample.observed();
     const xs = observed.columns.get(effectiveTreatment)!;
     const ys = observed.columns.get(effectiveOutcome)!;
-
-    const naiveFit = fitSimpleLinearRegression(xs, ys);
 
     let gridMin = xs[0]!;
     let gridMax = xs[0]!;
@@ -105,32 +112,52 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       if (x > gridMax) gridMax = x;
     }
     const grid = Array.from({ length: GRID_POINTS }, (_, i) => gridMin + ((gridMax - gridMin) * i) / (GRID_POINTS - 1));
-    const naiveYs = predictOverGrid(naiveFit, grid);
 
-    const trueCurve = doResponse(model, effectiveTreatment, effectiveOutcome, grid, ORACLE_REPLICATES, createRNG(seed + 1000));
+    // "naive" is g-computation with an empty adjustment set -- one code path
+    // for both curves at any basis degree, rather than a separate
+    // closed-form implementation that has to stay in sync with it.
+    const naiveCurve = gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, [], grid, degree);
+    const naiveYs = naiveCurve.ys;
+    // A polynomial fit doesn't have a single slope, so only fit/show this at
+    // degree 1 -- and since we authored the fit, no need to numerically
+    // detect its shape the way isApproximatelyLinear does for the oracle.
+    const naiveSlopeFit = degree === 1 ? fitMultivariateOLS([xs], ys) : null;
+
+    const trueCurve = doResponse(model, effectiveTreatment, effectiveOutcome, grid, ORACLE_REPLICATES, createRNG(seed + 1000), noiseSD);
     const isLinear = isApproximatelyLinear(trueCurve);
-    const trueAvgSlope = doContrast(model, effectiveTreatment, effectiveOutcome, gridMin, gridMax, ORACLE_REPLICATES, createRNG(seed + 2000)) / (gridMax - gridMin);
+    const trueAvgSlope = doContrast(model, effectiveTreatment, effectiveOutcome, gridMin, gridMax, ORACLE_REPLICATES, createRNG(seed + 2000), noiseSD) / (gridMax - gridMin);
 
     const adjustment = availableCovariates.filter((id) => adjustmentSet.has(id));
-    const gcompCurve = adjustment.length > 0 ? gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, adjustment, grid) : null;
-    const gcompAvgSlope = gcompCurve ? (gcompCurve.ys[gcompCurve.ys.length - 1]! - gcompCurve.ys[0]!) / (gridMax - gridMin) : null;
+    const gcompCurve = adjustment.length > 0 ? gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, adjustment, grid, degree) : null;
+    const gcompAvgSlope = gcompCurve && degree === 1 ? (gcompCurve.ys[gcompCurve.ys.length - 1]! - gcompCurve.ys[0]!) / (gridMax - gridMin) : null;
+
+    // Identifiability gate (ARCHITECTURE.md §9/§11): report whether the
+    // *current* adjustment set is a valid backdoor set, but never disable
+    // the checkboxes over it -- the whole point of the gallery is letting
+    // you check an invalid set and watch g-comp get it wrong anyway.
+    const gate = backdoorValid(model, effectiveTreatment, effectiveOutcome, new Set(adjustment));
+    const suggestedAdjustment = gate.ok ? null : findBackdoorSet(model, effectiveTreatment, effectiveOutcome);
+
+    const naiveRmse = rmseAgainstTruth(naiveYs, trueCurve.ys);
+    const gcompRmse = gcompCurve ? rmseAgainstTruth(gcompCurve.ys, trueCurve.ys) : null;
 
     // ATE(a -> b): a direct two-point contrast, always well-defined
-    // regardless of whether the curve is linear -- no averaging-over-a-range
+    // regardless of curve shape or basis degree -- no averaging-over-a-range
     // ambiguity, unlike the "avg. slope" summary above.
     let ate: { naive: number; gcomp: number | null; true: number } | null = null;
     if (estimand === 'ate' && Number.isFinite(ateA) && Number.isFinite(ateB)) {
-      const naiveAte = naiveFit.slope * (ateB - ateA);
-      const trueAte = doContrast(model, effectiveTreatment, effectiveOutcome, ateA, ateB, ORACLE_REPLICATES, createRNG(seed + 3000));
+      const naivePair = gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, [], [ateA, ateB], degree);
+      const naiveAte = naivePair.ys[1]! - naivePair.ys[0]!;
+      const trueAte = doContrast(model, effectiveTreatment, effectiveOutcome, ateA, ateB, ORACLE_REPLICATES, createRNG(seed + 3000), noiseSD);
       const gcompAte = adjustment.length > 0 ? (() => {
-        const c = gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, adjustment, [ateA, ateB]);
+        const c = gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, adjustment, [ateA, ateB], degree);
         return c.ys[1]! - c.ys[0]!;
       })() : null;
       ate = { naive: naiveAte, gcomp: gcompAte, true: trueAte };
     }
 
-    return { model, xs, ys, naiveFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, adjustment, ate };
-  }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB]);
+    return { model, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment };
+  }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, noiseSD]);
 
   return (
     <div>
@@ -140,6 +167,14 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
         <button type="button" onClick={() => setSeed((s) => s + 1)}>
           Resample (seed {seed})
         </button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color: '#475569' }}>basis degree</span>
+          <input type="number" value={degree} min={1} max={9} step={1} style={{ width: 56 }} onChange={(e) => setDegree(Math.round(e.target.valueAsNumber) || 1)} />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color: '#475569' }}>noise σ</span>
+          <input type="number" value={noiseSD} min={0} max={5} step={0.25} style={{ width: 56 }} onChange={(e) => setNoiseSD(e.target.valueAsNumber)} />
+        </label>
       </div>
 
       <textarea
@@ -203,6 +238,21 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
             )}
           </div>
 
+          {availableCovariates.length > 0 && (
+            <p style={{ margin: '0 0 12px', fontSize: 13 }}>
+              {run.gate.ok ? (
+                <span style={{ color: '#15803d' }}>✓ valid backdoor adjustment set</span>
+              ) : (
+                <span style={{ color: '#b45309' }}>
+                  ✗ invalid: {run.gate.reason}
+                  {run.suggestedAdjustment && (
+                    <> — a valid set would be {'{' + run.suggestedAdjustment.join(', ') + '}'}</>
+                  )}
+                </span>
+              )}
+            </p>
+          )}
+
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', margin: '4px 0 12px', flexWrap: 'wrap' }}>
             <span style={{ color: '#475569' }}>Estimate:</span>
             <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -230,25 +280,31 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
             </label>
           </div>
 
-          <DagView model={run.model} treatment={effectiveTreatment} outcome={effectiveOutcome} />
+          <DagView model={run.model} treatment={effectiveTreatment} outcome={effectiveOutcome} adjustmentSet={adjustmentSet} />
 
-          <div style={{ display: 'flex', gap: 24, margin: '16px 0', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 24, margin: '16px 0 4px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
             {estimand === 'doseResponse' ? (
               <>
-                <div>
-                  naive slope: <strong style={{ color: '#ef4444' }}>{run.naiveFit.slope.toFixed(3)}</strong>
-                </div>
+                {run.naiveSlopeFit && (
+                  <div>
+                    naive slope: <strong style={{ color: '#ef4444' }}>{run.naiveSlopeFit.coefficients[0]!.toFixed(3)}</strong>
+                  </div>
+                )}
                 {run.gcompAvgSlope !== null && (
                   <div>
                     g-comp slope: <strong style={{ color: '#2563eb' }}>{run.gcompAvgSlope.toFixed(3)}</strong>
                   </div>
                 )}
-                {run.isLinear ? (
+                {run.isLinear && degree === 1 ? (
                   <div>
                     true effect (slope): <strong style={{ color: '#16a34a' }}>{run.trueAvgSlope.toFixed(3)}</strong>
                   </div>
                 ) : (
-                  <div style={{ color: '#92400e' }}>true curve is nonlinear here — a single "slope" wouldn't mean much; see the chart, or switch to a two-point estimate below</div>
+                  <div style={{ color: '#92400e' }}>
+                    {degree > 1
+                      ? 'basis degree > 1 — no single "slope"; see the curve, or switch to a two-point estimate below'
+                      : 'true curve is nonlinear here — a single "slope" wouldn\'t mean much; see the chart, or switch to a two-point estimate below'}
+                  </div>
                 )}
               </>
             ) : run.ate ? (
@@ -267,6 +323,17 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
               </>
             ) : (
               <div style={{ color: '#92400e' }}>Enter valid numbers for both endpoints.</div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 24, margin: '0 0 16px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap', fontSize: 12.5, color: '#64748b' }}>
+            <div>
+              naive RMSE vs. truth: <strong>{run.naiveRmse.toFixed(3)}</strong>
+            </div>
+            {run.gcompRmse !== null && (
+              <div>
+                g-comp RMSE vs. truth: <strong>{run.gcompRmse.toFixed(3)}</strong>
+              </div>
             )}
           </div>
 

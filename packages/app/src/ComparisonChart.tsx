@@ -31,20 +31,26 @@ export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, 
           marker: { color: '#94a3b8', size: 5, opacity: 0.5 },
         },
         {
-          x: naiveGrid,
-          y: naiveYs,
-          mode: 'lines',
-          type: 'scatter',
-          name: 'naive (unadjusted) fit',
-          line: { color: '#ef4444', width: 3 },
-        },
-        {
           x: trueGrid,
           y: trueYs,
           mode: 'lines',
           type: 'scatter',
           name: 'true E[Y | do(X=x)]',
           line: { color: '#16a34a', width: 3, dash: 'dash' },
+        },
+        {
+          // fill: 'tonexty' shades the region between this trace and the
+          // one immediately before it in this array (the true curve) --
+          // requires naiveGrid/trueGrid to share the same x values, which
+          // they do (both come from the same `grid` in PlaygroundView).
+          x: naiveGrid,
+          y: naiveYs,
+          mode: 'lines',
+          type: 'scatter',
+          name: 'naive (unadjusted) fit',
+          line: { color: '#ef4444', width: 3 },
+          fill: 'tonexty',
+          fillcolor: 'rgba(239, 68, 68, 0.08)',
         },
         ...(gcomp
           ? [

@@ -1,7 +1,11 @@
 // ARCHITECTURE.md §4.8 — static validation. Turns parsed statements into a
 // validated Model IR, or a list of typed, author-facing errors. Rules are
 // numbered to match §4.8 exactly (as amended during design review: rule 6
-// is the security allow-list, rule 7 is the noise budget).
+// is the security allow-list). `cov()` (a former rule 7, noise-budget
+// bookkeeping) was retired — reproducing it by hand via an explicit shared
+// `latent`/`noise` term is one line of algebra, and `<->` already covers
+// the more important case (literature-standard "unobserved confounder,
+// magnitude unspecified" ADMG notation).
 import type { MathNode } from 'mathjs';
 import type { DistributionSource, StatementAst } from './ast.js';
 import { checkArity, getDistributionSpec, notImplementedSample } from './distributions.js';
@@ -13,7 +17,6 @@ const EPS_ALIASES = new Set(['eps', 'epsilon', 'ε']);
 
 type NodeStmt = Extract<StatementAst, { kind: 'node' }>;
 type NoiseStmt = Extract<StatementAst, { kind: 'noise' }>;
-type CovStmt = Extract<StatementAst, { kind: 'cov' }>;
 type BiStmt = Extract<StatementAst, { kind: 'bidirected' }>;
 
 export function validate(statements: StatementAst[]): Model | DslError[] {
@@ -21,7 +24,6 @@ export function validate(statements: StatementAst[]): Model | DslError[] {
 
   const nodeStmts = new Map<string, NodeStmt>();
   const noiseStmts = new Map<string, NoiseStmt>();
-  const covDecls: CovStmt[] = [];
   const biDecls: BiStmt[] = [];
 
   for (const stmt of statements) {
@@ -37,8 +39,6 @@ export function validate(statements: StatementAst[]): Model | DslError[] {
         continue;
       }
       noiseStmts.set(stmt.name, stmt);
-    } else if (stmt.kind === 'cov') {
-      covDecls.push(stmt);
     } else {
       biDecls.push(stmt);
     }
@@ -58,13 +58,6 @@ export function validate(statements: StatementAst[]): Model | DslError[] {
     }
   }
 
-  for (const decl of covDecls) {
-    for (const name of [decl.a, decl.b]) {
-      if (!nodeStmts.has(name)) {
-        errors.push({ message: `cov() refers to undeclared node "${name}"`, line: decl.line, kind: 'validation' });
-      }
-    }
-  }
   for (const decl of biDecls) {
     for (const name of [decl.a, decl.b]) {
       if (!nodeStmts.has(name)) {
@@ -88,7 +81,7 @@ export function validate(statements: StatementAst[]): Model | DslError[] {
 
   // Graph structure: parents (declared identifiers only — the eps aliases
   // are not declared identifiers and are excluded, per rule 2), plus the
-  // synthetic latents that §4.3/§4.4 sugar adds.
+  // synthetic latents that §4.4's <-> sugar adds.
   const declaredNames = new Set<string>([...nodeStmts.keys(), ...noiseStmts.keys()]);
   const parentsByName = new Map<string, Set<string>>();
   for (const name of declaredNames) parentsByName.set(name, new Set());
@@ -117,21 +110,6 @@ export function validate(statements: StatementAst[]): Model | DslError[] {
     parentsByName.get(decl.b)!.add(id);
     syntheticLatents.push(id);
   }
-  for (const decl of covDecls) {
-    const id = freshId(`U_cov_${decl.a}_${decl.b}`, declaredNames);
-    declaredNames.add(id);
-    parentsByName.set(id, new Set());
-    parentsByName.get(decl.a)!.add(id);
-    parentsByName.get(decl.b)!.add(id);
-    syntheticLatents.push(id);
-  }
-
-  // Rule 7: noise budget for cov() declarations (symmetric-loading
-  // convention — see ARCHITECTURE.md §4.3/§4.8 rule 7). <-> needs no check:
-  // it always adds a *fresh* independent latent, never borrowing variance
-  // from a node's existing noise.
-  errors.push(...checkNoiseBudget(covDecls, nodeStmts, noiseStmts));
-  if (errors.length > 0) return errors;
 
   // Rule 3: acyclic. DFS instead of a literal Kahn's pass, chosen because
   // it directly yields the offending path for the error message.
@@ -157,8 +135,8 @@ export function validate(statements: StatementAst[]): Model | DslError[] {
   }
 
   // Compile the Model. `parentsByName` is authoritative for Node.parents —
-  // it includes the synthetic cov()/<-> latents that a node's own raw
-  // expression never mentions by name.
+  // it includes the synthetic <-> latents that a node's own raw expression
+  // never mentions by name.
   const nodes = new Map<NodeId, Node>();
   for (const [name, stmt] of nodeStmts) {
     nodes.set(name, compileNode(name, stmt, declaredNames, parentsByName.get(name)!));
@@ -239,101 +217,6 @@ function checkDistribution(dist: DistributionSource, line: number): DslError[] {
   const constValues = dist.args.map((arg) => evalConstant(arg.node));
   const domainError = spec.checkConstantDomain(constValues);
   return domainError ? [{ message: `${dist.name}: ${domainError}`, line, kind: 'validation' }] : [];
-}
-
-// ---- rule 7: noise budget -----------------------------------------------
-
-type NoiseVarianceResult = { variance: number } | { error: string };
-
-function resolveNodeNoiseVariance(name: string, nodeStmts: Map<string, NodeStmt>, noiseStmts: Map<string, NoiseStmt>): NoiseVarianceResult {
-  const nodeStmt = nodeStmts.get(name);
-  if (nodeStmt) {
-    if (nodeStmt.form === 'stochastic') {
-      if (nodeStmt.dist.name !== 'Normal') {
-        return { error: `cov()/<-> requires "${name}" to have Normal noise (it is ~ ${nodeStmt.dist.name}(...))` };
-      }
-      const sd = evalConstant(nodeStmt.dist.args[1]!.node);
-      if (sd === undefined) {
-        return { error: `cov()/<-> requires "${name}"'s Normal sd to be a constant literal` };
-      }
-      return { variance: sd * sd };
-    }
-    const names = collectSymbolNames(nodeStmt.expr.node);
-    const usesEps = names.some((n) => EPS_ALIASES.has(n));
-    const namedNoiseRefs = names.filter((n) => noiseStmts.has(n));
-    if (usesEps && namedNoiseRefs.length > 0) {
-      return { error: `"${name}" mixes implicit "eps" noise with a named noise term; cov()/<-> needs one unambiguous noise source` };
-    }
-    if (usesEps) return { variance: 1 };
-    if (namedNoiseRefs.length > 1) {
-      return { error: `"${name}" references multiple named noise terms; cov()/<-> needs one unambiguous noise source` };
-    }
-    if (namedNoiseRefs.length === 1) {
-      return resolveNoiseTermVariance(namedNoiseRefs[0]!, noiseStmts);
-    }
-    return { error: `"${name}" has no noise term ("eps" or a named noise reference) for cov()/<-> to act on` };
-  }
-  return { error: `"${name}" is not a declared node` };
-}
-
-function resolveNoiseTermVariance(name: string, noiseStmts: Map<string, NoiseStmt>): NoiseVarianceResult {
-  const stmt = noiseStmts.get(name);
-  if (!stmt) return { error: `"${name}" is not a declared noise term` };
-  if (stmt.dist.name !== 'Normal') {
-    return { error: `cov()/<-> requires noise term "${name}" to be Normal (it is ${stmt.dist.name}(...))` };
-  }
-  const sd = evalConstant(stmt.dist.args[1]!.node);
-  if (sd === undefined) {
-    return { error: `cov()/<-> requires noise term "${name}"'s sd to be a constant literal` };
-  }
-  return { variance: sd * sd };
-}
-
-function checkNoiseBudget(covDecls: CovStmt[], nodeStmts: Map<string, NodeStmt>, noiseStmts: Map<string, NoiseStmt>): DslError[] {
-  const errors: DslError[] = [];
-  const budgetUsed = new Map<string, number>();
-  const firstLineFor = new Map<string, number>();
-
-  for (const decl of covDecls) {
-    const varA = resolveNodeNoiseVariance(decl.a, nodeStmts, noiseStmts);
-    const varB = resolveNodeNoiseVariance(decl.b, nodeStmts, noiseStmts);
-    if ('error' in varA) {
-      errors.push({ message: varA.error, line: decl.line, kind: 'validation' });
-      continue;
-    }
-    if ('error' in varB) {
-      errors.push({ message: varB.error, line: decl.line, kind: 'validation' });
-      continue;
-    }
-
-    const bound = Math.sqrt(varA.variance * varB.variance);
-    if (Math.abs(decl.value) > bound + 1e-9) {
-      errors.push({
-        message: `cov(${decl.a}, ${decl.b}) = ${decl.value} is outside the valid range [-${bound.toFixed(4)}, ${bound.toFixed(4)}] given their declared noise variances`,
-        line: decl.line,
-        kind: 'validation',
-      });
-      continue;
-    }
-
-    for (const name of [decl.a, decl.b]) {
-      budgetUsed.set(name, (budgetUsed.get(name) ?? 0) + Math.abs(decl.value));
-      if (!firstLineFor.has(name)) firstLineFor.set(name, decl.line);
-    }
-  }
-
-  for (const [name, used] of budgetUsed) {
-    const info = resolveNodeNoiseVariance(name, nodeStmts, noiseStmts);
-    if ('variance' in info && used > info.variance + 1e-9) {
-      errors.push({
-        message: `node "${name}" is over its noise budget: its cov() declarations sum to ${used.toFixed(4)}, exceeding its declared noise variance ${info.variance}`,
-        line: firstLineFor.get(name),
-        kind: 'validation',
-      });
-    }
-  }
-
-  return errors;
 }
 
 // ---- rule 3: acyclicity + topo order ------------------------------------

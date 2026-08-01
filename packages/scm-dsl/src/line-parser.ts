@@ -1,5 +1,5 @@
 // ARCHITECTURE.md §4.5: a hand-written line-level parser for the statement
-// forms (~, =, latent, <->, cov, noise); only RHS expressions and
+// forms (~, =, latent, <->, noise); only RHS expressions and
 // distribution-argument expressions are handed to mathjs. Purely syntactic
 // — identifier resolution and the security allow-list are §4.8's job
 // (validate.ts), since that needs the whole program's declared names.
@@ -12,7 +12,6 @@ const IDENT = '[A-Za-z][A-Za-z0-9_]*';
 const NODE_DECL_RE = new RegExp(`^(${IDENT})\\s*=\\s*(.+)$`);
 const STOCHASTIC_DECL_RE = new RegExp(`^(${IDENT})\\s*~\\s*(.+)$`);
 const NOISE_DECL_RE = new RegExp(`^noise\\s+(${IDENT})\\s*~\\s*(.+)$`);
-const COV_DECL_RE = new RegExp(`^cov\\s*\\(\\s*(${IDENT})\\s*,\\s*(${IDENT})\\s*\\)\\s*=\\s*(.+)$`);
 const BIDIRECTED_RE = new RegExp(`^(${IDENT})\\s*<->\\s*(${IDENT})$`);
 const LATENT_PREFIX_RE = /^latent\s+(.+)$/;
 
@@ -57,17 +56,6 @@ function parseStatementBody(body: string, line: number, latent: boolean): Statem
     const dist = parseDistribution(noiseMatch[2]!, line);
     if (isDslError(dist)) return dist;
     return { kind: 'noise', line, name: noiseMatch[1]!, dist };
-  }
-
-  const covMatch = body.match(COV_DECL_RE);
-  if (covMatch) {
-    if (latent) return { message: '"latent" cannot modify a cov() declaration', line, kind: 'syntax' };
-    const valueText = covMatch[3]!.trim();
-    const value = Number(valueText);
-    if (Number.isNaN(value)) {
-      return { message: `cov() value must be a number literal, got "${valueText}"`, line, kind: 'syntax' };
-    }
-    return { kind: 'cov', line, a: covMatch[1]!, b: covMatch[2]!, value };
   }
 
   const bidirectedMatch = body.match(BIDIRECTED_RE);
