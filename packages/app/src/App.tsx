@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { createRNG, doContrast, doResponse, forwardSample } from 'scm-engine';
-import { fitSimpleLinearRegression, predictOverGrid } from 'estimators';
+import { fitSimpleLinearRegression, gcompDoseResponse, predictOverGrid } from 'estimators';
 import { parseModel } from 'scm-dsl';
 import { ComparisonChart } from './ComparisonChart';
 import { DagView } from './DagView';
@@ -13,10 +13,30 @@ const GRID_POINTS = 25;
 export default function App() {
   const [presetId, setPresetId] = useState(PRESETS[0]!.id);
   const [seed, setSeed] = useState(1);
+  const [adjustmentSet, setAdjustmentSet] = useState<Set<string>>(new Set());
 
   const preset = PRESETS.find((p) => p.id === presetId)!;
 
   const parsed = useMemo(() => parseModel(preset.source), [preset.source]);
+
+  const availableCovariates = useMemo(() => {
+    if (!parsed.ok) return [];
+    return parsed.model.observed().filter((id) => id !== preset.treatment && id !== preset.outcome);
+  }, [parsed, preset.treatment, preset.outcome]);
+
+  function selectPreset(id: string) {
+    setPresetId(id);
+    setAdjustmentSet(new Set());
+  }
+
+  function toggleCovariate(id: string) {
+    setAdjustmentSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const run = useMemo(() => {
     if (!parsed.ok) return null;
@@ -41,8 +61,12 @@ export default function App() {
     const trueCurve = doResponse(model, preset.treatment, preset.outcome, grid, ORACLE_REPLICATES, createRNG(seed + 1000));
     const trueEffect = doContrast(model, preset.treatment, preset.outcome, gridMin, gridMax, ORACLE_REPLICATES, createRNG(seed + 2000)) / (gridMax - gridMin);
 
-    return { model, xs, ys, naiveFit, grid, naiveYs, trueCurve, trueEffect };
-  }, [parsed, preset.treatment, preset.outcome, seed]);
+    const adjustment = [...adjustmentSet];
+    const gcompCurve = adjustment.length > 0 ? gcompDoseResponse(observed, preset.treatment, preset.outcome, adjustment, grid) : null;
+    const gcompEffect = gcompCurve ? (gcompCurve.ys[gcompCurve.ys.length - 1]! - gcompCurve.ys[0]!) / (gridMax - gridMin) : null;
+
+    return { model, xs, ys, naiveFit, grid, naiveYs, trueCurve, trueEffect, gcompCurve, gcompEffect, adjustment };
+  }, [parsed, preset.treatment, preset.outcome, seed, adjustmentSet]);
 
   return (
     <main style={{ maxWidth: 980, margin: '0 auto', padding: '24px 16px', fontFamily: 'ui-sans-serif, system-ui' }}>
@@ -54,7 +78,7 @@ export default function App() {
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', margin: '16px 0', flexWrap: 'wrap' }}>
         <label>
           Model:{' '}
-          <select value={presetId} onChange={(e) => setPresetId(e.target.value)}>
+          <select value={presetId} onChange={(e) => selectPreset(e.target.value)}>
             {PRESETS.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}
@@ -65,6 +89,18 @@ export default function App() {
         <button type="button" onClick={() => setSeed((s) => s + 1)}>
           Resample (seed {seed})
         </button>
+
+        {availableCovariates.length > 0 && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <span style={{ color: '#475569' }}>Adjust for:</span>
+            {availableCovariates.map((id) => (
+              <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input type="checkbox" checked={adjustmentSet.has(id)} onChange={() => toggleCovariate(id)} />
+                {id}
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
       <p style={{ color: '#334155', fontStyle: 'italic' }}>{preset.caption}</p>
@@ -83,6 +119,11 @@ export default function App() {
             <div>
               naive slope: <strong style={{ color: '#ef4444' }}>{run.naiveFit.slope.toFixed(3)}</strong>
             </div>
+            {run.gcompEffect !== null && (
+              <div>
+                g-comp slope: <strong style={{ color: '#2563eb' }}>{run.gcompEffect.toFixed(3)}</strong>
+              </div>
+            )}
             <div>
               true effect (avg. slope): <strong style={{ color: '#16a34a' }}>{run.trueEffect.toFixed(3)}</strong>
             </div>
@@ -95,6 +136,7 @@ export default function App() {
             naiveYs={run.naiveYs}
             trueGrid={run.trueCurve.xs}
             trueYs={run.trueCurve.ys}
+            gcomp={run.gcompCurve ? { grid: run.gcompCurve.grid, ys: run.gcompCurve.ys, label: `g-comp adjusting for {${run.adjustment.join(', ')}}` } : null}
             treatment={preset.treatment}
             outcome={preset.outcome}
           />

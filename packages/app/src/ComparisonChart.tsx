@@ -13,11 +13,12 @@ interface ComparisonChartProps {
   naiveYs: number[];
   trueGrid: number[];
   trueYs: number[];
+  gcomp?: { grid: number[]; ys: number[]; label: string } | null;
   treatment: string;
   outcome: string;
 }
 
-export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, treatment, outcome }: ComparisonChartProps) {
+export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, gcomp, treatment, outcome }: ComparisonChartProps) {
   return (
     <Plot
       data={[
@@ -45,6 +46,18 @@ export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, 
           name: 'true E[Y | do(X=x)]',
           line: { color: '#16a34a', width: 3, dash: 'dash' },
         },
+        ...(gcomp
+          ? [
+              {
+                x: gcomp.grid,
+                y: gcomp.ys,
+                mode: 'lines' as const,
+                type: 'scatter' as const,
+                name: gcomp.label,
+                line: { color: '#2563eb', width: 3, dash: 'dot' as const },
+              },
+            ]
+          : []),
       ]}
       layout={{
         autosize: true,

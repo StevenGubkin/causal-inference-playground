@@ -20,15 +20,15 @@ export const PRESETS: Preset[] = [
     source: confoundingSrc,
     treatment: 'X',
     outcome: 'Y',
-    caption: 'A naive fit is biased (~3.38); the true effect of X on Y is exactly 2.0.',
+    caption: 'A naive fit is biased (~3.38); the true effect of X on Y is exactly 2.0. Adjust for C to watch g-computation recover it.',
   },
   {
     id: 'collider',
     label: 'Collider / M-bias',
     source: colliderSrc,
     treatment: 'X',
-    outcome: 'S',
-    caption: 'X and Y each cause the collider S with coefficient 1 — no adjustment-set UI yet, so this shows the X→S edge on its own.',
+    outcome: 'Y',
+    caption: 'X and Y are independent (true effect 0) — naive already gets that right. Adjust for the collider S and watch g-computation invent a spurious effect.',
   },
   {
     id: 'mediator',
@@ -36,7 +36,7 @@ export const PRESETS: Preset[] = [
     source: mediatorSrc,
     treatment: 'X',
     outcome: 'Y',
-    caption: "X's total effect on Y (via M) is 2 — naive already matches truth here, since over-control only appears once you adjust for M.",
+    caption: "X's total effect on Y (via M) is 2 — naive already matches truth. Adjust for the mediator M and watch g-computation erase the effect.",
   },
   {
     id: 'simpson',
@@ -44,7 +44,7 @@ export const PRESETS: Preset[] = [
     source: simpsonSrc,
     treatment: 'X',
     outcome: 'Y',
-    caption: 'Within each stratum of Z the effect is negative, but the confound is strong enough that the naive pooled fit reverses sign.',
+    caption: 'Within each stratum of Z the effect is negative, but the confound reverses the naive pooled fit. Adjust for Z to recover the true (negative) direction.',
   },
   {
     id: 'iv-late',
