@@ -3,5 +3,7 @@
 // estimate() runs. Zero UI dependencies (§3).
 export { gcompDoseResponse, fitMultivariateOLS, predictMultivariate } from './gcomp.js';
 export type { GcompResult, MultivariateFit } from './gcomp.js';
+export { iv2sls } from './iv2sls.js';
+export type { Iv2slsResult } from './iv2sls.js';
 export { fitSimpleLinearRegression, predictOverGrid } from './ols.js';
 export type { LinearFit } from './ols.js';

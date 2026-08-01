@@ -53,7 +53,7 @@ export const PRESETS: Preset[] = [
     source: ivLateSrc,
     treatment: 'D',
     outcome: 'Y',
-    caption: 'D and Y share an unobserved confounder U, so naive OLS is biased — 2SLS/LATE recovery is not wired up yet, just the bias is visible here.',
+    caption: 'D and Y share an unobserved confounder U, so naive OLS is biased. Set Z as the instrument to recover the LATE (compliers\' effect) via 2SLS — watch it differ from the population ATE the oracle computes.',
   },
   {
     id: 'nonlinear',

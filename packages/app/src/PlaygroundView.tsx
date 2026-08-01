@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRNG, doContrast, doResponse, forwardSample } from 'scm-engine';
 import type { Curve } from 'scm-engine';
-import { fitMultivariateOLS, gcompDoseResponse } from 'estimators';
-import { backdoorValid, findBackdoorSet } from 'graph';
+import { fitMultivariateOLS, gcompDoseResponse, iv2sls } from 'estimators';
+import { backdoorValid, findBackdoorSet, instrumentValid } from 'graph';
 import { parseModel } from 'scm-dsl';
 import { ComparisonChart } from './ComparisonChart';
 import { DagView } from './DagView';
@@ -61,6 +61,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
   const [treatment, setTreatment] = useState(initialTreatment);
   const [outcome, setOutcome] = useState(initialOutcome);
   const [adjustmentSet, setAdjustmentSet] = useState<Set<string>>(new Set());
+  const [instrument, setInstrument] = useState('');
   const [seed, setSeed] = useState(1);
   const [estimand, setEstimand] = useState<Estimand>('doseResponse');
   const [ateA, setAteA] = useState(0);
@@ -87,6 +88,17 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     [observedNodes, effectiveTreatment, effectiveOutcome],
   );
 
+  // Instrument tracks what the user picked, same fallback pattern as
+  // treatment/outcome; empty string means "none selected".
+  const effectiveInstrument = instrument && availableCovariates.includes(instrument) ? instrument : '';
+
+  // A node can't be both the instrument and part of the adjustment set at
+  // once -- conditioning on your own instrument doesn't make sense. Each
+  // list excludes whatever the other currently holds, and the handlers
+  // below clear the other side on selection so this stays consistent.
+  const adjustmentCandidates = useMemo(() => availableCovariates.filter((id) => id !== effectiveInstrument), [availableCovariates, effectiveInstrument]);
+  const instrumentCandidates = useMemo(() => availableCovariates.filter((id) => !adjustmentSet.has(id)), [availableCovariates, adjustmentSet]);
+
   function toggleCovariate(id: string) {
     setAdjustmentSet((prev) => {
       const next = new Set(prev);
@@ -94,6 +106,19 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       else next.add(id);
       return next;
     });
+    if (instrument === id) setInstrument('');
+  }
+
+  function selectInstrument(id: string) {
+    setInstrument(id);
+    if (id) {
+      setAdjustmentSet((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   const run = useMemo(() => {
@@ -141,6 +166,14 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     const naiveRmse = rmseAgainstTruth(naiveYs, trueCurve.ys);
     const gcompRmse = gcompCurve ? rmseAgainstTruth(gcompCurve.ys, trueCurve.ys) : null;
 
+    // IV/2SLS (ARCHITECTURE.md §8): computed regardless of the instrument
+    // validity verdict below -- same "annotate, don't disable" philosophy
+    // as the backdoor gate. Note this recovers the LATE under effect
+    // heterogeneity, not the population ATE; `trueAvgSlope`/`ate.true`
+    // above are what to compare it against to see that divergence.
+    const ivResult = effectiveInstrument ? iv2sls(observed, effectiveTreatment, effectiveOutcome, effectiveInstrument, grid) : null;
+    const ivGate = effectiveInstrument ? instrumentValid(model, effectiveTreatment, effectiveOutcome, effectiveInstrument) : null;
+
     // ATE(a -> b): a direct two-point contrast, always well-defined
     // regardless of curve shape or basis degree -- no averaging-over-a-range
     // ambiguity, unlike the "avg. slope" summary above.
@@ -156,8 +189,8 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       ate = { naive: naiveAte, gcomp: gcompAte, true: trueAte };
     }
 
-    return { model, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment };
-  }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, noiseSD]);
+    return { model, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment, ivResult, ivGate };
+  }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, noiseSD, effectiveInstrument]);
 
   return (
     <div>
@@ -225,10 +258,10 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
               </select>
             </label>
 
-            {availableCovariates.length > 0 && (
+            {adjustmentCandidates.length > 0 && (
               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                 <span style={{ color: '#475569' }}>Adjust for:</span>
-                {availableCovariates.map((id) => (
+                {adjustmentCandidates.map((id) => (
                   <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <input type="checkbox" checked={adjustmentSet.has(id)} onChange={() => toggleCovariate(id)} />
                     {id}
@@ -236,10 +269,24 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                 ))}
               </div>
             )}
+
+            {instrumentCandidates.length > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ color: '#475569' }}>Instrument (IV):</span>
+                <select value={effectiveInstrument} onChange={(e) => selectInstrument(e.target.value)}>
+                  <option value="">(none)</option>
+                  {instrumentCandidates.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
-          {availableCovariates.length > 0 && (
-            <p style={{ margin: '0 0 12px', fontSize: 13 }}>
+          {adjustmentCandidates.length > 0 && (
+            <p style={{ margin: '0 0 4px', fontSize: 13 }}>
               {run.gate.ok ? (
                 <span style={{ color: '#15803d' }}>✓ valid backdoor adjustment set</span>
               ) : (
@@ -249,6 +296,16 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                     <> — a valid set would be {'{' + run.suggestedAdjustment.join(', ') + '}'}</>
                   )}
                 </span>
+              )}
+            </p>
+          )}
+
+          {run.ivGate && (
+            <p style={{ margin: '0 0 12px', fontSize: 13 }}>
+              {run.ivGate.ok ? (
+                <span style={{ color: '#15803d' }}>✓ valid instrument</span>
+              ) : (
+                <span style={{ color: '#b45309' }}>✗ invalid instrument: {run.ivGate.reason}</span>
               )}
             </p>
           )}
@@ -337,6 +394,19 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
             )}
           </div>
 
+          {run.ivResult && (
+            <div style={{ display: 'flex', gap: 24, margin: '0 0 16px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
+              <div>
+                2SLS estimate (LATE, if effects are heterogeneous): <strong style={{ color: '#7c3aed' }}>{run.ivResult.estimate.toFixed(3)}</strong>
+              </div>
+              <div>
+                first-stage F:{' '}
+                <strong style={{ color: run.ivResult.firstStageF > 10 ? '#15803d' : '#b45309' }}>{run.ivResult.firstStageF.toFixed(1)}</strong>
+                {run.ivResult.firstStageF <= 10 && ' (weak instrument)'}
+              </div>
+            </div>
+          )}
+
           <ComparisonChart
             xs={run.xs}
             ys={run.ys}
@@ -345,6 +415,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
             trueGrid={run.trueCurve.xs}
             trueYs={run.trueCurve.ys}
             gcomp={run.gcompCurve ? { grid: run.gcompCurve.grid, ys: run.gcompCurve.ys, label: `g-comp adjusting for {${run.adjustment.join(', ')}}` } : null}
+            iv={run.ivResult ? { grid: run.ivResult.grid, ys: run.ivResult.ys, label: `2SLS via ${effectiveInstrument}` } : null}
             treatment={effectiveTreatment}
             outcome={effectiveOutcome}
           />
