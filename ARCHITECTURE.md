@@ -543,9 +543,11 @@ estimator call the `Oracle`.
   demo into a blog post, course page, or forum reply. A large distribution multiplier
   for a teaching tool.
 - **Export.** Model as `.scm`; sample as CSV; DAG as SVG; and **generated runnable
-  code** (Python with DoWhy/statsmodels, and/or R) reproducing the analysis. The
-  code-export bridges the playground to real workflows and quietly proves your
-  numbers are honest — reviewers can run them.
+  Python** (statsmodels, scikit-learn where the active view uses a kernel/logistic
+  fit) reproducing the analysis. R export was considered and deliberately dropped —
+  one target kept in exact sync with the TS math is worth more than two drifting out
+  of it. The code-export bridges the playground to real workflows and quietly proves
+  your numbers are honest — reviewers can run them.
 
 ---
 

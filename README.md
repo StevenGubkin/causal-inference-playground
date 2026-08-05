@@ -31,9 +31,10 @@ explained in [METHODS.md](./METHODS.md).
 
 ## Try these
 
-Each link opens a fully-specified example model in the live app. (These are fixed
-preset pages, not a general permalink feature yet — see "What it does" below for what
-that means in practice.)
+Each link opens a fully-specified example model in the live app. Every one of these —
+and any state you build yourself in Freeform, or a preset you've modified — is also a
+shareable permalink: the "copy permalink" button compresses the current model, query,
+and seed into the URL.
 
 - **[Confounding](https://stevengubkin.github.io/causal-inference-playground/#/examples/confounding)** — a naive fit is biased; adjust for the confounder to recover the truth.
 - **[Collider / M-bias](https://stevengubkin.github.io/causal-inference-playground/#/examples/collider)** — adjusting a "reasonable" covariate *creates* bias.
@@ -42,6 +43,7 @@ that means in practice.)
 - **[IV / LATE](https://stevengubkin.github.io/causal-inference-playground/#/examples/iv-late)** — OLS is biased; 2SLS recovers the complier effect.
 - **[Nonlinear dose–response](https://stevengubkin.github.io/causal-inference-playground/#/examples/nonlinear)** — recover a cosine with a flexible basis.
 - **[Front-door adjustment](https://stevengubkin.github.io/causal-inference-playground/#/examples/frontdoor)** — no valid backdoor set exists (the confounder is unobserved); adjust via a mediator instead.
+- **[Propensity score (IPW / AIPW)](https://stevengubkin.github.io/causal-inference-playground/#/examples/ipw-confounding)** — a binary treatment confounded by `Z`; naive is biased, IPW/AIPW reweight by `P(X=1|Z)` to recover the truth.
 
 ## Validation
 
@@ -63,7 +65,7 @@ npm run validate        # runs packages/validation against committed fixtures
 | d-separation & backdoor sets    | networkx `is_d_separator`               | set membership (validity + minimal set) | ✅ |
 | Front-door adjustment           | statsmodels two-stage OLS · DoWhy (structural ID only) | point estimate | ✅ |
 | g-computation dose–response     | statsmodels (flexible basis)            | curve within tolerance            | planned |
-| IPW / AIPW ATE                  | DoWhy · EconML                          | point estimate                    | planned (no estimator yet) |
+| IPW / AIPW ATE                  | DoWhy · EconML                          | point estimate                    | planned (estimator built; cross-library fixture not yet generated) |
 | Graph testable implications     | dagitty / networkx                      | implied CI statements             | planned (`testableImplications()` not yet implemented) |
 | Worked examples                 | Hernán & Robins, *What If* datasets     | published effect estimates        | planned |
 
@@ -119,17 +121,29 @@ Working today:
 - **A correct interventional oracle** — `do(X=x)` by graph mutilation, with common
   random numbers for smooth ground-truth curves.
 - **Estimators**: naive (unadjusted), g-computation (polynomial or kernel-ridge/RBF
-  basis, so it recovers nonlinear dose-response), IV/2SLS with honest LATE-vs-ATE
-  labeling, and front-door adjustment (for when the confounder is unobserved and no
-  backdoor set exists at all).
+  basis, so it recovers nonlinear dose-response), stratification (for a discrete,
+  low-cardinality adjustment set), IPW and doubly-robust AIPW (for a binary treatment,
+  with propensity-overlap and effective-sample-size diagnostics), IV/2SLS with honest
+  LATE-vs-ATE labeling, and front-door adjustment (for when the confounder is
+  unobserved and no backdoor set exists at all).
 - **A back-door, instrument, and front-door identifiability gate** that tells you
   whether a strategy is even valid on your graph — and lets you override it to *watch*
   the failure (collider bias, over-control, weak instruments, an invalid mediator).
+- **Shareable permalinks** — any state, Freeform or a modified preset, compresses into
+  a URL via "copy permalink." Decoding routes through the exact same DSL allow-list
+  every other model source uses (no special trust for a link), with layered defenses
+  against the resource-exhaustion surface compression adds — size caps and a
+  statement-count cap, checked before any parsing — and a clean error banner on a
+  malformed or incompatible-schema link rather than a crash.
+- **Export**: model as `.scm`, sample as CSV, DAG as SVG, and generated runnable
+  Python (statsmodels, plus real scikit-learn `KernelRidge`/`Logit` where the active
+  view uses kernel-ridge g-comp or IPW/AIPW) reproducing the analysis on screen.
 
-Planned, not yet built (tracked in [ARCHITECTURE.md](./ARCHITECTURE.md)): stratification,
-IPW, and doubly-robust AIPW estimators; Monte-Carlo mode (repeated-sampling bias/RMSE/CI
-coverage); and shareable permalinks / CSV / SVG / Python-R export. The Validation table
-below tracks what's cross-checked against reference implementations as of today.
+Planned, not yet built (tracked in [ARCHITECTURE.md](./ARCHITECTURE.md)): Monte-Carlo
+mode (repeated-sampling bias/RMSE/CI coverage); an embeddable `<iframe>`/web-component
+widget; and npm publishing of `scm-engine`/`estimators` as standalone packages. The
+Validation table below tracks what's cross-checked against reference implementations
+as of today.
 
 ## How it works
 

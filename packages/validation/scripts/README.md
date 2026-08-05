@@ -67,8 +67,13 @@ it.
   §9's `testableImplications()` isn't implemented in `packages/graph` yet,
   so there's nothing to cross-check there so far.
 
-Not yet implemented: g-computation's flexible basis vs. statsmodels, IPW/AIPW
-vs. DoWhy/EconML (no `ipw`/`aipw` estimator exists yet to validate), graph
-testable implications (needs `testableImplications()` implemented first),
-and the Hernán & Robins "What If" worked examples (needs sourcing/licensing
-the actual published datasets).
+Not yet implemented: g-computation's flexible basis vs. statsmodels; IPW/AIPW
+vs. DoWhy/EconML (the `ipw`/`aipw` estimators themselves now exist in
+`packages/estimators/src/{ipw,aipw}.ts`, with their own golden tests against
+the engine's own oracle and a dedicated `ipw-confounding.scm` fixture model —
+what's missing is specifically the cross-library fixture: a
+`generate_ipw_fixture.py` against DoWhy/EconML, which would also need
+`econml` added to `pyproject.toml`, a dependency this repo doesn't carry
+yet); graph testable implications (needs `testableImplications()`
+implemented first); and the Hernán & Robins "What If" worked examples
+(needs sourcing/licensing the actual published datasets).
