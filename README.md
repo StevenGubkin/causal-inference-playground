@@ -9,7 +9,8 @@ effect** — the one thing you never get with real data.
 > `C ~ Normal(0, 1)`
 > `Y <-> ...` &nbsp;→&nbsp; DAG · sampled data · true `do(X)` curve vs. your estimate
 
-**[▶ Live demo](https://TODO)** · **[Paradox gallery](https://TODO/gallery)** ·
+**[▶ Live demo](https://stevengubkin.github.io/causal-inference-playground/)** ·
+**[Examples](https://stevengubkin.github.io/causal-inference-playground/#/examples)** ·
 **[Methods](./METHODS.md)** · **[Architecture](./ARCHITECTURE.md)**
 
 <!-- TODO: replace with a short GIF of the confounding slider flipping the estimate -->
@@ -30,15 +31,19 @@ explained in [METHODS.md](./METHODS.md).
 
 ## Try these
 
-Each link opens a fully-specified model; every state in the app is a permalink.
+Each link opens a fully-specified example model in the live app. (These are fixed
+preset pages, not a general permalink feature yet — see "What it does" below for what
+that means in practice.)
 
-- **Confounding** — a naive fit is biased; adjust for the confounder to recover the truth. `[link]`
-- **Collider / M-bias** — adjusting a "reasonable" covariate *creates* bias. `[link]`
-- **Over-control** — adjusting a mediator erases the effect you're measuring. `[link]`
-- **Simpson's paradox** — the trend reverses inside every stratum. `[link]`
-- **Front-door** — back-door adjustment fails; front-door recovers the effect. `[link]`
-- **IV / LATE** — OLS is biased; 2SLS recovers the complier effect. `[link]`
-- **Nonlinear dose–response** — recover a cosine with a flexible basis. `[link]`
+- **[Confounding](https://stevengubkin.github.io/causal-inference-playground/#/examples/confounding)** — a naive fit is biased; adjust for the confounder to recover the truth.
+- **[Collider / M-bias](https://stevengubkin.github.io/causal-inference-playground/#/examples/collider)** — adjusting a "reasonable" covariate *creates* bias.
+- **[Over-control](https://stevengubkin.github.io/causal-inference-playground/#/examples/mediator)** — adjusting a mediator erases the effect you're measuring.
+- **[Simpson's paradox](https://stevengubkin.github.io/causal-inference-playground/#/examples/simpson)** — the trend reverses inside every stratum.
+- **[IV / LATE](https://stevengubkin.github.io/causal-inference-playground/#/examples/iv-late)** — OLS is biased; 2SLS recovers the complier effect.
+- **[Nonlinear dose–response](https://stevengubkin.github.io/causal-inference-playground/#/examples/nonlinear)** — recover a cosine with a flexible basis.
+
+Front-door adjustment doesn't have an example yet — no front-door estimator exists yet
+(see "What it does" and Validation below).
 
 ## Validation
 
@@ -94,19 +99,25 @@ demonstration, made checkable.
 
 ## What it does
 
+Working today:
+
 - **A small SCM language** with deterministic (`=`) and stochastic (`~`) nodes,
   per-equation independent noise, latent variables, and bidirected edges (`<->`) for
   unobserved confounding.
 - **A correct interventional oracle** — `do(X=x)` by graph mutilation, with common
   random numbers for smooth ground-truth curves.
-- **Estimators** from a naive baseline through g-computation, stratification, IPW,
-  doubly-robust AIPW, IV/2SLS (with honest LATE labeling), and front-door.
-- **An identifiability gate** that tells you whether a strategy is even valid on your
-  graph — and lets you override it to *watch* the failure.
-- **Monte-Carlo mode** — repeat the whole pipeline and see the sampling distribution of
-  your estimate: bias, RMSE, and CI coverage.
-- **Shareable everything** — models, queries, and seeds serialize into the URL; export
-  to CSV, SVG, and runnable Python/R.
+- **Estimators**: naive (unadjusted), g-computation (polynomial or kernel-ridge/RBF
+  basis, so it recovers nonlinear dose-response), and IV/2SLS with honest LATE-vs-ATE
+  labeling.
+- **A back-door and instrument identifiability gate** that tells you whether a strategy
+  is even valid on your graph — and lets you override it to *watch* the failure
+  (collider bias, over-control, weak instruments).
+
+Planned, not yet built (tracked in [ARCHITECTURE.md](./ARCHITECTURE.md)): stratification,
+IPW, and doubly-robust AIPW estimators; front-door adjustment (estimator and
+identifiability check); Monte-Carlo mode (repeated-sampling bias/RMSE/CI coverage); and
+shareable permalinks / CSV / SVG / Python-R export. The Validation table below tracks
+what's cross-checked against reference implementations as of today.
 
 ## How it works
 
@@ -118,7 +129,9 @@ are hard for them for the same reason they are hard in reality.
 
 ## Packages
 
-The engine and estimators carry no UI dependency and are published standalone:
+The engine and estimators carry no UI dependency; standalone npm publishing is
+planned but hasn't happened yet, so these names are placeholders, not installable
+packages:
 
 - `@TODO/scm-engine` — SCM IR, distributions, forward and interventional sampling.
 - `@TODO/causal-estimators` — the estimators and the identifiability gate.
