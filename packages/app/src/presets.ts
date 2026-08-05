@@ -54,7 +54,8 @@ export const PRESETS: Preset[] = [
     source: ivLateSrc,
     treatment: 'D',
     outcome: 'Y',
-    caption: 'D and Y share an unobserved confounder U, so naive OLS is biased. Set Z as the instrument to recover the LATE (compliers\' effect) via 2SLS — watch it differ from the population ATE the oracle computes.',
+    caption:
+      "D and Y share an unobserved confounder U, so naive OLS is biased. The compliers' effect is exactly 3 here, vs. always-takers' effect of 1 — set Z as the instrument to recover that complier-only LATE via 2SLS, and watch \"true LATE\" below diverge from the population \"true effect\" the oracle computes.",
   },
   {
     id: 'nonlinear',

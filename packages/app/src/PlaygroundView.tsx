@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createRNG, doContrast, doResponse, forwardSample } from 'scm-engine';
+import { createRNG, doContrast, doResponse, forwardSample, lateContrast } from 'scm-engine';
 import type { Curve } from 'scm-engine';
 import { fitMultivariateOLS, frontdoorDoseResponse, gcompDoseResponse, iv2sls, kernelRidgeDoseResponse } from 'estimators';
 import { backdoorValid, findBackdoorSet, frontdoorValid, instrumentValid } from 'graph';
@@ -213,9 +213,16 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     // validity verdict below -- same "annotate, don't disable" philosophy
     // as the backdoor gate. Note this recovers the LATE under effect
     // heterogeneity, not the population ATE; `trueAvgSlope`/`ate.true`
-    // above are what to compare it against to see that divergence.
+    // above are the population figure, and `trueLate` immediately below is
+    // the estimand 2SLS is actually targeting -- the direct, correct
+    // comparison for the divergence METHODS.md's IV/LATE section describes.
     const ivResult = effectiveInstrument ? iv2sls(observed, effectiveTreatment, effectiveOutcome, effectiveInstrument, grid) : null;
     const ivGate = effectiveInstrument ? instrumentValid(model, effectiveTreatment, effectiveOutcome, effectiveInstrument) : null;
+    // True LATE: the population average of Y(do(D=1))-Y(do(D=0)) restricted
+    // to compliers (units whose treatment would flip with the instrument).
+    // NaN'able (see lateContrast's doc comment) if no compliers turn up in
+    // the replicates -- guarded below before display.
+    const trueLate = effectiveInstrument ? lateContrast(model, effectiveTreatment, effectiveOutcome, effectiveInstrument, ORACLE_REPLICATES, createRNG(seed + 4000), noiseSD) : null;
 
     // Front-door (ARCHITECTURE.md §8/§9, METHODS.md §4): same "annotate,
     // don't disable" philosophy as the backdoor/instrument gates above.
@@ -237,7 +244,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       ate = { naive: naiveAte, gcomp: gcompAte, true: trueAte };
     }
 
-    return { model, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment, ivResult, ivGate, frontdoorResult, frontdoorGate };
+    return { model, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment, ivResult, ivGate, trueLate, frontdoorResult, frontdoorGate };
   }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, basisMode, bandwidth, lambda, noiseSD, effectiveInstrument, effectiveMediator]);
 
   return (
@@ -504,7 +511,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
           </div>
 
           {run.ivResult && (
-            <div style={{ display: 'flex', gap: 24, margin: '0 0 16px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 24, margin: '0 0 4px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
               <div>
                 2SLS estimate (LATE, if effects are heterogeneous): <strong style={{ color: '#7c3aed' }}>{run.ivResult.estimate.toFixed(3)}</strong>
               </div>
@@ -513,6 +520,20 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                 <strong style={{ color: run.ivResult.firstStageF > 10 ? '#15803d' : '#b45309' }}>{run.ivResult.firstStageF.toFixed(1)}</strong>
                 {run.ivResult.firstStageF <= 10 && ' (weak instrument)'}
               </div>
+            </div>
+          )}
+
+          {run.trueLate && (
+            <div style={{ display: 'flex', gap: 24, margin: '0 0 16px', fontFamily: 'ui-monospace, monospace', fontSize: 12.5, flexWrap: 'wrap' }}>
+              {Number.isFinite(run.trueLate.estimate) ? (
+                <div style={{ color: '#64748b' }}>
+                  true LATE (compliers only, {(run.trueLate.complierShare * 100).toFixed(0)}% of the population):{' '}
+                  <strong style={{ color: '#16a34a' }}>{run.trueLate.estimate.toFixed(3)}</strong> — compare 2SLS to <em>this</em>, not to the
+                  population "true effect" above; they're different estimands whenever effects are heterogeneous across compliance types.
+                </div>
+              ) : (
+                <div style={{ color: '#b45309' }}>no compliers found in this sample — can't compute a true LATE to compare against</div>
+              )}
             </div>
           )}
 
