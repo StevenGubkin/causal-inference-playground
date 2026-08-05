@@ -60,7 +60,7 @@ export interface GcompResult {
  * would change the units of the fitted degree-1 coefficient (per-SD instead
  * of per-raw-unit), breaking comparability with the already-validated
  * golden numbers (e.g. confounding.scm's naive slope ~3.38) at degree=1. */
-function polynomialBasis(x: number, degree: number): number[] {
+export function polynomialBasis(x: number, degree: number): number[] {
   const basis: number[] = [];
   let power = x;
   for (let d = 1; d <= degree; d++) {
@@ -70,7 +70,7 @@ function polynomialBasis(x: number, degree: number): number[] {
   return basis;
 }
 
-function polynomialColumns(col: Float64Array, degree: number): Float64Array[] {
+export function polynomialColumns(col: Float64Array, degree: number): Float64Array[] {
   const columns = Array.from({ length: degree }, () => new Float64Array(col.length));
   for (let i = 0; i < col.length; i++) {
     const powers = polynomialBasis(col[i]!, degree);

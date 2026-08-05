@@ -16,11 +16,14 @@ interface ComparisonChartProps {
   gcomp?: { grid: number[]; ys: number[]; label: string } | null;
   iv?: { grid: number[]; ys: number[]; label: string } | null;
   frontdoor?: { grid: number[]; ys: number[]; label: string } | null;
+  stratify?: { grid: number[]; ys: number[]; label: string } | null;
+  ipw?: { grid: number[]; ys: number[]; label: string } | null;
+  aipw?: { grid: number[]; ys: number[]; label: string } | null;
   treatment: string;
   outcome: string;
 }
 
-export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, gcomp, iv, frontdoor, treatment, outcome }: ComparisonChartProps) {
+export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, gcomp, iv, frontdoor, stratify, ipw, aipw, treatment, outcome }: ComparisonChartProps) {
   return (
     <Plot
       data={[
@@ -87,6 +90,42 @@ export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, 
                 type: 'scatter' as const,
                 name: frontdoor.label,
                 line: { color: '#db2777', width: 3, dash: 'longdashdot' as const },
+              },
+            ]
+          : []),
+        ...(stratify
+          ? [
+              {
+                x: stratify.grid,
+                y: stratify.ys,
+                mode: 'lines' as const,
+                type: 'scatter' as const,
+                name: stratify.label,
+                line: { color: '#0d9488', width: 3, dash: 'longdash' as const },
+              },
+            ]
+          : []),
+        ...(ipw
+          ? [
+              {
+                x: ipw.grid,
+                y: ipw.ys,
+                mode: 'lines' as const,
+                type: 'scatter' as const,
+                name: ipw.label,
+                line: { color: '#d97706', width: 3, dash: 'dot' as const },
+              },
+            ]
+          : []),
+        ...(aipw
+          ? [
+              {
+                x: aipw.grid,
+                y: aipw.ys,
+                mode: 'lines' as const,
+                type: 'scatter' as const,
+                name: aipw.label,
+                line: { color: '#4338ca', width: 3, dash: 'dashdot' as const },
               },
             ]
           : []),

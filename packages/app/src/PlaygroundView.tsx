@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { createRNG, doContrast, doResponse, forwardSample, lateContrast } from 'scm-engine';
 import type { Curve } from 'scm-engine';
-import { fitMultivariateOLS, frontdoorDoseResponse, gcompDoseResponse, iv2sls, kernelRidgeDoseResponse } from 'estimators';
+import { aipwAte, fitMultivariateOLS, frontdoorDoseResponse, gcompDoseResponse, ipwAte, isBinaryColumn, iv2sls, kernelRidgeDoseResponse, stratifyDoseResponse } from 'estimators';
 import { backdoorValid, findBackdoorSet, frontdoorValid, instrumentValid } from 'graph';
 import { parseModel, parseStatements } from 'scm-dsl';
 import { decodePermalink, describePermalinkError, encodePermalink } from 'share';
@@ -288,6 +288,36 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     const frontdoorResult = effectiveMediator ? frontdoorDoseResponse(observed, effectiveTreatment, effectiveOutcome, effectiveMediator, grid) : null;
     const frontdoorGate = effectiveMediator ? frontdoorValid(model, effectiveTreatment, effectiveOutcome, new Set([effectiveMediator])) : null;
 
+    // IPW/AIPW (ARCHITECTURE.md §8, METHODS.md §4) are inherently binary-treatment
+    // methods -- gated on the *current* treatment column's shape, not a user
+    // selection, mirroring the "compute regardless, annotate/don't block" philosophy
+    // iv2sls/frontdoor already use for instrument/mediator selection.
+    const isBinaryTreatment = isBinaryColumn(xs);
+    const ipwResult = isBinaryTreatment ? ipwAte(observed, effectiveTreatment, effectiveOutcome, adjustment, grid) : null;
+    const aipwResult = isBinaryTreatment ? aipwAte(observed, effectiveTreatment, effectiveOutcome, adjustment, grid) : null;
+
+    // stratify (ARCHITECTURE.md §8/METHODS.md §4): polynomial-in-X basis only
+    // (basisMode === 'kernelRidge' has no stratify analogue, same scope
+    // limitation iv2sls/frontdoor already have relative to gcomp's dual basis
+    // modes). Wrapped in try/catch -- unlike every other estimator above, its
+    // "too many strata" guard is easily reachable from the live UI (any
+    // continuous covariate in the adjustment set trips it), so a throw here must
+    // be caught and surfaced as a message, not allowed to blow up the page.
+    let stratifyResult: { grid: number[]; ys: number[] } | null = null;
+    let stratifyError: string | null = null;
+    if (basisMode === 'polynomial' && adjustment.length > 0) {
+      try {
+        stratifyResult = stratifyDoseResponse(observed, effectiveTreatment, effectiveOutcome, adjustment, grid, degree);
+      } catch (err) {
+        stratifyError = (err as Error).message;
+      }
+    }
+    // Same normalization as gcompAvgSlope: the raw ys[last]-ys[0] is the
+    // rise over the *whole grid range* (gridMax-gridMin), not a per-unit-X
+    // slope, so it must be divided down the same way to be comparable to
+    // naive/g-comp/true slope's numbers.
+    const stratifyAvgSlope = stratifyResult && degree === 1 ? (stratifyResult.ys[stratifyResult.ys.length - 1]! - stratifyResult.ys[0]!) / (gridMax - gridMin) : null;
+
     // ATE(a -> b): a direct two-point contrast, always well-defined
     // regardless of curve shape or basis degree -- no averaging-over-a-range
     // ambiguity, unlike the "avg. slope" summary above.
@@ -303,7 +333,37 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       ate = { naive: naiveAte, gcomp: gcompAte, true: trueAte };
     }
 
-    return { model, observed, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment, ivResult, ivGate, trueLate, frontdoorResult, frontdoorGate };
+    return {
+      model,
+      observed,
+      xs,
+      ys,
+      naiveSlopeFit,
+      grid,
+      naiveYs,
+      trueCurve,
+      isLinear,
+      trueAvgSlope,
+      gcompCurve,
+      gcompAvgSlope,
+      naiveRmse,
+      gcompRmse,
+      adjustment,
+      ate,
+      gate,
+      suggestedAdjustment,
+      ivResult,
+      ivGate,
+      trueLate,
+      frontdoorResult,
+      frontdoorGate,
+      isBinaryTreatment,
+      ipwResult,
+      aipwResult,
+      stratifyResult,
+      stratifyAvgSlope,
+      stratifyError,
+    };
   }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, basisMode, bandwidth, lambda, noiseSD, effectiveInstrument, effectiveMediator]);
 
   return (
@@ -629,6 +689,43 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
             </div>
           )}
 
+          {run.stratifyAvgSlope !== null && (
+            <div style={{ display: 'flex', gap: 24, margin: '0 0 4px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
+              <div>
+                stratify slope: <strong style={{ color: '#0d9488' }}>{run.stratifyAvgSlope.toFixed(3)}</strong>
+              </div>
+            </div>
+          )}
+          {run.stratifyError && <p style={{ margin: '0 0 16px', fontSize: 13, color: '#b45309' }}>✗ stratify: {run.stratifyError}</p>}
+
+          {run.ipwResult && (
+            <div style={{ display: 'flex', gap: 24, margin: '0 0 4px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
+              <div>
+                IPW ATE: <strong style={{ color: '#d97706' }}>{run.ipwResult.estimate.toFixed(3)}</strong>
+              </div>
+              <div>
+                min overlap:{' '}
+                <strong style={{ color: run.ipwResult.minOverlap > 0.1 ? '#15803d' : '#b45309' }}>{run.ipwResult.minOverlap.toFixed(3)}</strong>
+                {run.ipwResult.minOverlap <= 0.1 && ' (poor overlap -- estimate may be unstable)'}
+              </div>
+              <div style={{ color: '#64748b', fontSize: 12.5 }}>
+                effective N (treated/control): {run.ipwResult.effectiveSampleSizeTreated.toFixed(0)} / {run.ipwResult.effectiveSampleSizeControl.toFixed(0)}
+              </div>
+            </div>
+          )}
+
+          {run.aipwResult && (
+            <div style={{ display: 'flex', gap: 24, margin: '0 0 16px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
+              <div>
+                AIPW ATE: <strong style={{ color: '#4338ca' }}>{run.aipwResult.estimate.toFixed(3)}</strong>
+              </div>
+              <div style={{ color: '#64748b', fontSize: 12.5 }}>
+                min overlap: {run.aipwResult.minOverlap.toFixed(3)}, effective N: {run.aipwResult.effectiveSampleSizeTreated.toFixed(0)} /{' '}
+                {run.aipwResult.effectiveSampleSizeControl.toFixed(0)}
+              </div>
+            </div>
+          )}
+
           <ComparisonChart
             xs={run.xs}
             ys={run.ys}
@@ -647,6 +744,9 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
             }
             iv={run.ivResult ? { grid: run.ivResult.grid, ys: run.ivResult.ys, label: `2SLS via ${effectiveInstrument}` } : null}
             frontdoor={run.frontdoorResult ? { grid: run.frontdoorResult.grid, ys: run.frontdoorResult.ys, label: `front-door via ${effectiveMediator}` } : null}
+            stratify={run.stratifyResult ? { grid: run.stratifyResult.grid, ys: run.stratifyResult.ys, label: `stratify by {${run.adjustment.join(', ')}}` } : null}
+            ipw={run.ipwResult ? { grid: run.ipwResult.grid, ys: run.ipwResult.ys, label: `IPW via {${run.adjustment.join(', ')}}` } : null}
+            aipw={run.aipwResult ? { grid: run.aipwResult.grid, ys: run.aipwResult.ys, label: `AIPW via {${run.adjustment.join(', ')}}` } : null}
             treatment={effectiveTreatment}
             outcome={effectiveOutcome}
           />
@@ -685,6 +785,8 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                     seed,
                     noiseSD,
                     sampleSize: SAMPLE_SIZE,
+                    isBinaryTreatment: run.isBinaryTreatment,
+                    includeStratify: run.stratifyResult !== null,
                   }),
                   'text/x-python',
                 )

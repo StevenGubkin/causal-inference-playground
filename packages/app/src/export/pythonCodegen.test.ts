@@ -32,6 +32,8 @@ describe('modelToPython', () => {
       seed: 1,
       noiseSD: 1,
       sampleSize: 500,
+      isBinaryTreatment: false,
+      includeStratify: true,
     });
 
     expect(script).toContain('import numpy as np');
@@ -74,6 +76,8 @@ describe('modelToPython', () => {
       seed: 2,
       noiseSD: 1,
       sampleSize: 500,
+      isBinaryTreatment: false,
+      includeStratify: true,
     });
 
     expect(script).toContain('IV / 2SLS via Z');
@@ -102,6 +106,8 @@ describe('modelToPython', () => {
       seed: 3,
       noiseSD: 1,
       sampleSize: 500,
+      isBinaryTreatment: false,
+      includeStratify: true,
     });
 
     expect(script).toContain('front-door via M');
@@ -128,6 +134,8 @@ describe('modelToPython', () => {
       seed: 1,
       noiseSD: 1,
       sampleSize: 500,
+      isBinaryTreatment: false,
+      includeStratify: true,
     });
 
     expect(script).toContain('from sklearn.kernel_ridge import KernelRidge');
@@ -163,8 +171,129 @@ describe('modelToPython', () => {
       seed: 1,
       noiseSD: 1,
       sampleSize: 500,
+      isBinaryTreatment: false,
+      includeStratify: true,
     });
 
     expect(script).not.toContain('sklearn');
+  });
+
+  it('includes a stratification section when adjusting in polynomial mode', () => {
+    const source = loadSource('confounding.scm');
+    const parsed = parseModel(source);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
+
+    const script = modelToPython({
+      source,
+      model: parsed.model,
+      treatment: 'X',
+      outcome: 'Y',
+      adjustmentSet: new Set(['C']),
+      instrument: null,
+      mediator: null,
+      basisMode: 'polynomial',
+      degree: 1,
+      bandwidth: 1,
+      lambda: 0.1,
+      seed: 1,
+      noiseSD: 1,
+      sampleSize: 500,
+      isBinaryTreatment: false,
+      includeStratify: true,
+    });
+
+    expect(script).toContain('stratification, adjusting for {C}');
+    expect(script).toContain('data.groupby(["C"])');
+  });
+
+  it('omits the stratification section when includeStratify is false, even while adjusting in polynomial mode', () => {
+    // Regression test: a continuous adjustment covariate makes the live
+    // app's own stratifyDoseResponse hit its cardinality guard and refuse
+    // to compute (see stratify.ts's "too many strata" check) -- the caller
+    // (PlaygroundView.tsx) passes includeStratify=false in that case, and
+    // the generated script must honor it, rather than emitting a groupby
+    // loop that would crash on a rank-deficient per-stratum fit.
+    const source = loadSource('confounding.scm');
+    const parsed = parseModel(source);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
+
+    const script = modelToPython({
+      source,
+      model: parsed.model,
+      treatment: 'X',
+      outcome: 'Y',
+      adjustmentSet: new Set(['C']),
+      instrument: null,
+      mediator: null,
+      basisMode: 'polynomial',
+      degree: 1,
+      bandwidth: 1,
+      lambda: 0.1,
+      seed: 1,
+      noiseSD: 1,
+      sampleSize: 500,
+      isBinaryTreatment: false,
+      includeStratify: false,
+    });
+
+    expect(script).not.toContain('stratification');
+    expect(script).not.toContain('groupby');
+  });
+
+  it('includes IPW/AIPW sections when the treatment is binary', () => {
+    const source = loadSource('ipw-confounding.scm');
+    const parsed = parseModel(source);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
+
+    const script = modelToPython({
+      source,
+      model: parsed.model,
+      treatment: 'X',
+      outcome: 'Y',
+      adjustmentSet: new Set(['Z']),
+      instrument: null,
+      mediator: null,
+      basisMode: 'polynomial',
+      degree: 1,
+      bandwidth: 1,
+      lambda: 0.1,
+      seed: 1,
+      noiseSD: 1,
+      sampleSize: 500,
+      isBinaryTreatment: true,
+      includeStratify: false,
+    });
+
+    expect(script).toContain('inverse-propensity weighting (IPW), adjusting for {Z}');
+    expect(script).toContain('ps_fit = sm.Logit(data["X"], ps_design).fit(disp=0)');
+    expect(script).toContain('doubly-robust AIPW');
+  });
+
+  it('omits IPW/AIPW sections when the treatment is not binary', () => {
+    const source = loadSource('confounding.scm');
+    const parsed = parseModel(source);
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
+
+    const script = modelToPython({
+      source,
+      model: parsed.model,
+      treatment: 'X',
+      outcome: 'Y',
+      adjustmentSet: new Set(['C']),
+      instrument: null,
+      mediator: null,
+      basisMode: 'polynomial',
+      degree: 1,
+      bandwidth: 1,
+      lambda: 0.1,
+      seed: 1,
+      noiseSD: 1,
+      sampleSize: 500,
+      isBinaryTreatment: false,
+      includeStratify: true,
+    });
+
+    expect(script).not.toContain('IPW');
+    expect(script).not.toContain('AIPW');
   });
 });

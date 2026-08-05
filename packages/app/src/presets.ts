@@ -1,6 +1,7 @@
 import confoundingSrc from '../../examples/models/confounding.scm?raw';
 import colliderSrc from '../../examples/models/collider.scm?raw';
 import frontdoorSrc from '../../examples/models/frontdoor.scm?raw';
+import ipwConfoundingSrc from '../../examples/models/ipw-confounding.scm?raw';
 import ivLateSrc from '../../examples/models/iv-late.scm?raw';
 import mediatorSrc from '../../examples/models/mediator.scm?raw';
 import nonlinearSrc from '../../examples/models/nonlinear.scm?raw';
@@ -64,6 +65,15 @@ export const PRESETS: Preset[] = [
     treatment: 'X',
     outcome: 'Y',
     caption: 'The true curve is a cosine — a degree-1 fit can\'t represent that shape at all. Raise the basis degree (~6) and adjust for C to watch g-computation recover it.',
+  },
+  {
+    id: 'ipw-confounding',
+    label: 'Propensity score (IPW / AIPW)',
+    source: ipwConfoundingSrc,
+    treatment: 'X',
+    outcome: 'Y',
+    caption:
+      'Z confounds the binary treatment X and drives Y directly, so naive OLS is biased upward (~3.0+). Because X is binary, IPW/AIPW reweight by the propensity score P(X=1|Z) automatically and recover the true effect of 2.0.',
   },
   {
     id: 'frontdoor',

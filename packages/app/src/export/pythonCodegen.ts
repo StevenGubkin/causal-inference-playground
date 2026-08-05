@@ -118,10 +118,18 @@ export interface PythonExportParams {
   seed: number;
   noiseSD: number;
   sampleSize: number;
+  isBinaryTreatment: boolean;
+  /** Whether the live TS stratifyDoseResponse call actually succeeded for
+   * the current adjustment set (as opposed to hitting its "too many strata"
+   * cardinality guard, e.g. a continuous covariate) -- gates the generated
+   * stratify section the same way the app's own results panel is gated, so
+   * the exported script doesn't crash with a rank-deficient per-stratum fit
+   * on a case the app itself already refuses to compute. */
+  includeStratify: boolean;
 }
 
 export function modelToPython(params: PythonExportParams): string {
-  const { source, model, treatment, outcome, adjustmentSet, instrument, mediator, basisMode, degree, bandwidth, lambda, seed, noiseSD, sampleSize } = params;
+  const { source, model, treatment, outcome, adjustmentSet, instrument, mediator, basisMode, degree, bandwidth, lambda, seed, noiseSD, sampleSize, isBinaryTreatment, includeStratify } = params;
   const statements = nodeStatements(source);
   const observedIds = model.observed();
   const adjustment = [...adjustmentSet];
@@ -175,6 +183,33 @@ gcomp_design = ${designExpr}
 gcomp_fit = sm.OLS(data["${outcome}"], sm.add_constant(gcomp_design)).fit()
 print("g-computation coefficients (treatment basis first, then adjustment set):")
 print(gcomp_fit.params)`);
+
+      // Stratified g-computation: no single statsmodels/sklearn primitive
+      // for this, so a pandas groupby loop *is* the idiomatic Python
+      // expression of the algorithm (mirrors stratify.ts's own strata
+      // grouping/weighted-average structure). Only emitted when the live
+      // app's own stratifyDoseResponse succeeded for this adjustment set --
+      // a continuous covariate makes almost every row its own stratum,
+      // which the TS side rejects via a cardinality guard but an
+      // unconditional groupby loop here would instead crash on (a
+      // rank-deficient per-stratum fit with no free parameters left over).
+      if (includeStratify) {
+        const stratifyGroupCols = adjustment.map((id) => `"${id}"`).join(', ');
+        const stratifyPowers = Array.from({ length: degree }, (_, i) => i + 1);
+        sections.push(`# --- stratification, adjusting for {${adjustment.join(', ')}} (degree-${degree} basis in ${treatment}) ---
+strat_grid = np.linspace(data["${treatment}"].min(), data["${treatment}"].max(), 5)
+strat_ys = np.zeros_like(strat_grid)
+for _, group in data.groupby([${stratifyGroupCols}]):
+    design = np.column_stack([group["${treatment}"]**d for d in [${stratifyPowers.join(', ')}]])
+    fit = sm.OLS(group["${outcome}"], sm.add_constant(design)).fit()
+    weight = len(group) / len(data)
+    for i, x in enumerate(strat_grid):
+        xrow = np.array([x**d for d in [${stratifyPowers.join(', ')}]])
+        strat_ys[i] += weight * (fit.params.iloc[0] + xrow @ fit.params.iloc[1:].values)
+print("stratification dose-response:")
+for x, y in zip(strat_grid, strat_ys):
+    print(f"  ${treatment}={x:.3f} -> ${outcome}={y:.3f}")`);
+      }
     }
   } else {
     sections.push(`# --- kernel ridge (RBF) setup ---
@@ -217,6 +252,36 @@ fd_stage1 = sm.OLS(data["${mediator}"], sm.add_constant(data["${treatment}"])).f
 fd_stage2 = sm.OLS(data["${outcome}"], sm.add_constant(np.column_stack([data["${mediator}"], data["${treatment}"]]))).fit()
 frontdoor_estimate = fd_stage1.params.iloc[1] * fd_stage2.params.iloc[1]
 print(f"front-door estimate: {frontdoor_estimate:.4f}")`);
+  }
+
+  if (isBinaryTreatment) {
+    // Propensity model via statsmodels' Logit -- a well-known, idiomatic
+    // replacement for the hand-rolled IRLS loop in logistic.ts. The
+    // Horvitz-Thompson/augmentation combination itself has no library
+    // one-liner, so it's hand-transcribed (same category as IV's/front-
+    // door's two-line combination step above).
+    const adjustCols = adjustment.map((id) => `"${id}"`).join(', ');
+    sections.push(`# --- inverse-propensity weighting (IPW), adjusting for {${adjustment.join(', ')}} ---
+ps_design = sm.add_constant(data[[${adjustCols}]]) if [${adjustCols}] else sm.add_constant(pd.DataFrame(index=data.index))
+ps_fit = sm.Logit(data["${treatment}"], ps_design).fit(disp=0)
+ps = ps_fit.predict(ps_design).clip(1e-3, 1 - 1e-3)
+treated = data["${treatment}"] == 1
+mu_t = (data.loc[treated, "${outcome}"] / ps[treated]).sum() / (1 / ps[treated]).sum()
+mu_c = (data.loc[~treated, "${outcome}"] / (1 - ps[~treated])).sum() / (1 / (1 - ps[~treated])).sum()
+ipw_estimate = mu_t - mu_c
+overlap = np.where(treated, ps, 1 - ps)
+print(f"IPW ATE: {ipw_estimate:.4f}, min overlap: {overlap.min():.4f}")
+
+# --- doubly-robust AIPW (reuses ps_fit/ps above), adjusting for {${adjustment.join(', ')}} ---
+outcome_design = sm.add_constant(data[["${treatment}", ${adjustCols}]]) if [${adjustCols}] else sm.add_constant(data[["${treatment}"]])
+outcome_fit = sm.OLS(data["${outcome}"], outcome_design).fit()
+design1 = outcome_design.copy(); design1["${treatment}"] = 1
+design0 = outcome_design.copy(); design0["${treatment}"] = 0
+mu1 = outcome_fit.predict(design1)
+mu0 = outcome_fit.predict(design0)
+aug = np.where(treated, (data["${outcome}"] - mu1) / ps, -(data["${outcome}"] - mu0) / (1 - ps))
+aipw_estimate = (mu1 - mu0 + aug).mean()
+print(f"AIPW ATE: {aipw_estimate:.4f}")`);
   }
 
   return sections.join('\n\n') + '\n';
