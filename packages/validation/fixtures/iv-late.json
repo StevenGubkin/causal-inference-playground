@@ -1,0 +1,13 @@
+{
+  "problem": "IV/2SLS (LATE) (iv-late.scm)",
+  "dgp": "potential-outcome parents D0/D1 (METHODS.md worked construction); D0~Bernoulli(logistic(-0.5+0.8U)); D1=max(D0, D1extra); D=D0+(D1-D0)*Z",
+  "n": 20000,
+  "seed": 20260802,
+  "iv2sls_estimate": 2.996325306042598,
+  "first_stage_f": 3014.836662762516,
+  "population_ate_tauC_3_tauAT_1": 1.4529,
+  "references": {
+    "linearmodels": "7.0",
+    "statsmodels": "0.14.6"
+  }
+}

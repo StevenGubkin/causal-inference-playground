@@ -8,9 +8,12 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -b",
-    "validate": "echo 'no fixtures yet -- Phase 3 (ARCHITECTURE.md §17); see packages/validation/scripts' && exit 0"
+    "validate": "tsc -b && node dist/index.js"
   },
   "dependencies": {
-    "estimators": "*"
+    "estimators": "*",
+    "graph": "*",
+    "scm-dsl": "*",
+    "scm-engine": "*"
   }
 }

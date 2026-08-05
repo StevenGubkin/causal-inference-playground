@@ -1,0 +1,139 @@
+{
+  "problem": "d-separation / backdoor-criterion adjustment sets",
+  "dgp": "purely structural (graph topology only, no sampling)",
+  "cases": [
+    {
+      "model": "confounding.scm",
+      "edges": [
+        [
+          "C",
+          "X"
+        ],
+        [
+          "X",
+          "Y"
+        ],
+        [
+          "C",
+          "Y"
+        ]
+      ],
+      "treatment": "X",
+      "outcome": "Y",
+      "adjustment_sets_checked": [
+        {
+          "z": [],
+          "valid": false
+        },
+        {
+          "z": [
+            "C"
+          ],
+          "valid": true
+        }
+      ],
+      "minimal_backdoor_set": [
+        "C"
+      ]
+    },
+    {
+      "model": "collider.scm",
+      "edges": [
+        [
+          "X",
+          "S"
+        ],
+        [
+          "Y",
+          "S"
+        ]
+      ],
+      "treatment": "X",
+      "outcome": "Y",
+      "adjustment_sets_checked": [
+        {
+          "z": [],
+          "valid": true
+        },
+        {
+          "z": [
+            "S"
+          ],
+          "valid": false
+        }
+      ],
+      "minimal_backdoor_set": []
+    },
+    {
+      "model": "mediator.scm",
+      "edges": [
+        [
+          "X",
+          "M"
+        ],
+        [
+          "M",
+          "Y"
+        ]
+      ],
+      "treatment": "X",
+      "outcome": "Y",
+      "adjustment_sets_checked": [
+        {
+          "z": [],
+          "valid": true
+        },
+        {
+          "z": [
+            "M"
+          ],
+          "valid": false
+        }
+      ],
+      "minimal_backdoor_set": []
+    },
+    {
+      "model": "m-bias (inline, packages/graph/src/backdoor.test.ts)",
+      "edges": [
+        [
+          "U1",
+          "X"
+        ],
+        [
+          "X",
+          "Y"
+        ],
+        [
+          "U1",
+          "M"
+        ],
+        [
+          "U2",
+          "Y"
+        ],
+        [
+          "U2",
+          "M"
+        ]
+      ],
+      "treatment": "X",
+      "outcome": "Y",
+      "adjustment_sets_checked": [
+        {
+          "z": [],
+          "valid": true
+        },
+        {
+          "z": [
+            "M"
+          ],
+          "valid": false
+        }
+      ],
+      "minimal_backdoor_set": []
+    }
+  ],
+  "references": {
+    "networkx": "3.4.2"
+  }
+}

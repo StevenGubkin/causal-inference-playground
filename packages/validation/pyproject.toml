@@ -1,0 +1,16 @@
+[project]
+name = "validation-fixtures"
+version = "0.0.0"
+description = "Fixture generators for ARCHITECTURE.md §10b -- cross-checks our estimators against DoWhy, statsmodels, and linearmodels. Not a published package; scripts/ is run out-of-band to produce the committed fixtures/*.json."
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "dowhy>=0.11",
+  "statsmodels>=0.14",
+  "linearmodels>=6.0",
+  "networkx>=3.3",
+]
+
+[tool.uv]
+package = false

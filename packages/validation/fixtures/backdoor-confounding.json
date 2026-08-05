@@ -1,0 +1,18 @@
+{
+  "problem": "backdoor ATE (confounding.scm)",
+  "dgp": "C ~ Normal(0,1); X = 1.5*C + eps; Y = 2*X + 3*C + eps",
+  "n": 20000,
+  "seed": 20260801,
+  "naive_ols_slope": 3.379140226533858,
+  "backdoor_adjusted_ols_slope": 2.012453594404395,
+  "dowhy_backdoor_estimate": 2.012453594404395,
+  "dowhy_ci": [
+    1.9985570865037159,
+    2.026350102305074
+  ],
+  "true_effect": 2.0,
+  "references": {
+    "statsmodels": "0.14.6",
+    "dowhy": "0.14"
+  }
+}

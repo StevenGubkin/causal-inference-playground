@@ -5,5 +5,5 @@
     "rootDir": "src"
   },
   "include": ["src"],
-  "references": [{ "path": "../estimators" }]
+  "references": [{ "path": "../estimators" }, { "path": "../graph" }, { "path": "../scm-dsl" }, { "path": "../scm-engine" }]
 }

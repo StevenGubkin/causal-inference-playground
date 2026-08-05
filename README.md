@@ -46,39 +46,51 @@ Every estimator and every graph-level identification result is checked against t
 reference implementations the field already trusts, on canonical problems, within
 Monte-Carlo tolerance. Fixtures (expected values, precomputed) are committed to the
 repo, so the suite runs in CI without a Python runtime; the scripts that generate them
-are kept in-repo for provenance.
+(`packages/validation/scripts/`, run via `uv sync && uv run python scripts/generate_*.py`
+from `packages/validation/`) are kept in-repo for provenance.
 
 ```bash
 npm run validate        # runs packages/validation against committed fixtures
 ```
 
-| What                            | Checked against                         | Asserted                          |
-|---------------------------------|-----------------------------------------|-----------------------------------|
-| Back-door ATE (confounding)     | DoWhy · statsmodels OLS                 | point estimate + CI               |
-| g-computation dose–response     | statsmodels (flexible basis)            | curve within tolerance            |
-| IPW / AIPW ATE                  | DoWhy · EconML                          | point estimate                    |
-| IV / 2SLS (LATE)                | linearmodels `IV2SLS`                   | coefficient + first-stage F       |
-| Front-door adjustment           | DoWhy front-door                        | point estimate                    |
-| d-separation & adjustment sets  | dagitty                                 | set membership + testable implic. |
-| Worked examples                 | Hernán & Robins, *What If* datasets     | published effect estimates        |
+| What                            | Checked against                         | Asserted                          | Status |
+|---------------------------------|------------------------------------------|-----------------------------------|:---:|
+| Back-door ATE (confounding)     | DoWhy · statsmodels OLS                 | point estimate + CI               | ✅ |
+| IV / 2SLS (LATE)                | linearmodels `IV2SLS`                   | coefficient + classical first-stage F | ✅ |
+| d-separation & backdoor sets    | networkx `is_d_separator`               | set membership (validity + minimal set) | ✅ |
+| g-computation dose–response     | statsmodels (flexible basis)            | curve within tolerance            | planned |
+| IPW / AIPW ATE                  | DoWhy · EconML                          | point estimate                    | planned (no estimator yet) |
+| Front-door adjustment           | DoWhy front-door                        | point estimate                    | planned (no estimator yet) |
+| Graph testable implications     | dagitty / networkx                      | implied CI statements             | planned (`testableImplications()` not yet implemented) |
+| Worked examples                 | Hernán & Robins, *What If* datasets     | published effect estimates        | planned |
 
-A concrete example already verified in the reference engine — the confounding model
-`C ~ N(0,1); X = 1.5C + eps; Y = 2X + 3C + eps`, whose true effect of `X` on `Y` is
-exactly **2.0**:
+Two concrete examples, verified against independent reference implementations, not
+just our own internal tests:
 
-| estimator                 | estimate | matches |
+**Confounding** — `C ~ N(0,1); X = 1.5C + eps; Y = 2X + 3C + eps`, true effect of `X`
+on `Y` is exactly **2.0**:
+
+| estimator                 | estimate | matches DoWhy/statsmodels |
 |---------------------------|---------:|:-------:|
 | naive (unadjusted)        |    3.38  | biased (expected) |
-| g-computation, adjust {C} |    2.01  | ✓ true effect |
-| interventional oracle     |    2.01  | ✓ true effect |
+| g-computation, adjust {C} |    2.01  | ✓ (diff < 0.01) |
 
-The oracle (graph mutilation + resampling) and the adjusted estimator agree with the
-analytic truth, and the naive estimator is biased by exactly the confounding term —
-which is the whole demonstration, made checkable.
+**IV/LATE** — the compliance-heterogeneity construction in [METHODS.md](./METHODS.md),
+where 2SLS should recover the *complier* effect (3.0), not the population ATE (~1.45):
 
-> Why this matters: the audience for this tool will probe it. Matching DoWhy, EconML,
-> and dagitty within tolerance is what makes "here is the true effect" a claim rather
-> than a hope.
+| estimator      | estimate | matches linearmodels `IV2SLS` |
+|-----------------|---------:|:-------:|
+| naive           |     n/a  | biased (confounded by U) |
+| 2SLS (LATE)     |    3.05  | ✓ (diff < 0.06) |
+
+The oracle (graph mutilation + resampling) and the adjusted estimators agree with the
+analytic truth and with independent Python reference implementations; the naive
+estimator is biased in both cases exactly as the theory predicts — which is the whole
+demonstration, made checkable.
+
+> Why this matters: the audience for this tool will probe it. Matching DoWhy,
+> linearmodels, and networkx within tolerance is what makes "here is the true effect"
+> a claim rather than a hope.
 
 ## What it does
 
