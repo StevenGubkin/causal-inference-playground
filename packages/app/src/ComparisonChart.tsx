@@ -15,11 +15,12 @@ interface ComparisonChartProps {
   trueYs: number[];
   gcomp?: { grid: number[]; ys: number[]; label: string } | null;
   iv?: { grid: number[]; ys: number[]; label: string } | null;
+  frontdoor?: { grid: number[]; ys: number[]; label: string } | null;
   treatment: string;
   outcome: string;
 }
 
-export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, gcomp, iv, treatment, outcome }: ComparisonChartProps) {
+export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, gcomp, iv, frontdoor, treatment, outcome }: ComparisonChartProps) {
   return (
     <Plot
       data={[
@@ -74,6 +75,18 @@ export function ComparisonChart({ xs, ys, naiveGrid, naiveYs, trueGrid, trueYs, 
                 type: 'scatter' as const,
                 name: iv.label,
                 line: { color: '#7c3aed', width: 3, dash: 'dashdot' as const },
+              },
+            ]
+          : []),
+        ...(frontdoor
+          ? [
+              {
+                x: frontdoor.grid,
+                y: frontdoor.ys,
+                mode: 'lines' as const,
+                type: 'scatter' as const,
+                name: frontdoor.label,
+                line: { color: '#db2777', width: 3, dash: 'longdashdot' as const },
               },
             ]
           : []),

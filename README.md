@@ -41,9 +41,7 @@ that means in practice.)
 - **[Simpson's paradox](https://stevengubkin.github.io/causal-inference-playground/#/examples/simpson)** — the trend reverses inside every stratum.
 - **[IV / LATE](https://stevengubkin.github.io/causal-inference-playground/#/examples/iv-late)** — OLS is biased; 2SLS recovers the complier effect.
 - **[Nonlinear dose–response](https://stevengubkin.github.io/causal-inference-playground/#/examples/nonlinear)** — recover a cosine with a flexible basis.
-
-Front-door adjustment doesn't have an example yet — no front-door estimator exists yet
-(see "What it does" and Validation below).
+- **[Front-door adjustment](https://stevengubkin.github.io/causal-inference-playground/#/examples/frontdoor)** — no valid backdoor set exists (the confounder is unobserved); adjust via a mediator instead.
 
 ## Validation
 
@@ -63,13 +61,13 @@ npm run validate        # runs packages/validation against committed fixtures
 | Back-door ATE (confounding)     | DoWhy · statsmodels OLS                 | point estimate + CI               | ✅ |
 | IV / 2SLS (LATE)                | linearmodels `IV2SLS`                   | coefficient + classical first-stage F | ✅ |
 | d-separation & backdoor sets    | networkx `is_d_separator`               | set membership (validity + minimal set) | ✅ |
+| Front-door adjustment           | statsmodels two-stage OLS · DoWhy (structural ID only) | point estimate | ✅ |
 | g-computation dose–response     | statsmodels (flexible basis)            | curve within tolerance            | planned |
 | IPW / AIPW ATE                  | DoWhy · EconML                          | point estimate                    | planned (no estimator yet) |
-| Front-door adjustment           | DoWhy front-door                        | point estimate                    | planned (no estimator yet) |
 | Graph testable implications     | dagitty / networkx                      | implied CI statements             | planned (`testableImplications()` not yet implemented) |
 | Worked examples                 | Hernán & Robins, *What If* datasets     | published effect estimates        | planned |
 
-Two concrete examples, verified against independent reference implementations, not
+Three concrete examples, verified against independent reference implementations, not
 just our own internal tests:
 
 **Confounding** — `C ~ N(0,1); X = 1.5C + eps; Y = 2X + 3C + eps`, true effect of `X`
@@ -87,6 +85,20 @@ where 2SLS should recover the *complier* effect (3.0), not the population ATE (~
 |-----------------|---------:|:-------:|
 | naive           |     n/a  | biased (confounded by U) |
 | 2SLS (LATE)     |    3.05  | ✓ (diff < 0.06) |
+
+**Front-door** — `U` confounds `X` and `Y` but is unobserved, so no valid backdoor set
+exists; `X = 2U+eps; M = 2X+eps; Y = 3M+5U+eps`, true effect of `X` on `Y` is exactly
+**6.0**:
+
+| estimator            | estimate | matches statsmodels two-stage OLS |
+|-----------------------|---------:|:-------:|
+| naive (unadjusted)    |     8.01 | biased (confounded by U) |
+| front-door, via {M}   |     5.98 | ✓ (diff < 0.03) |
+
+(Cross-checking this one caught a real bug in `dowhy==0.14`'s own front-door
+estimator — its second-stage regression silently drops the required adjustment for
+`X`. See `packages/validation/scripts/generate_frontdoor_fixture.py` for the trace;
+DoWhy is still used to confirm *identification*, just not for the numeric estimate.)
 
 The oracle (graph mutilation + resampling) and the adjusted estimators agree with the
 analytic truth and with independent Python reference implementations; the naive
@@ -107,17 +119,17 @@ Working today:
 - **A correct interventional oracle** — `do(X=x)` by graph mutilation, with common
   random numbers for smooth ground-truth curves.
 - **Estimators**: naive (unadjusted), g-computation (polynomial or kernel-ridge/RBF
-  basis, so it recovers nonlinear dose-response), and IV/2SLS with honest LATE-vs-ATE
-  labeling.
-- **A back-door and instrument identifiability gate** that tells you whether a strategy
-  is even valid on your graph — and lets you override it to *watch* the failure
-  (collider bias, over-control, weak instruments).
+  basis, so it recovers nonlinear dose-response), IV/2SLS with honest LATE-vs-ATE
+  labeling, and front-door adjustment (for when the confounder is unobserved and no
+  backdoor set exists at all).
+- **A back-door, instrument, and front-door identifiability gate** that tells you
+  whether a strategy is even valid on your graph — and lets you override it to *watch*
+  the failure (collider bias, over-control, weak instruments, an invalid mediator).
 
 Planned, not yet built (tracked in [ARCHITECTURE.md](./ARCHITECTURE.md)): stratification,
-IPW, and doubly-robust AIPW estimators; front-door adjustment (estimator and
-identifiability check); Monte-Carlo mode (repeated-sampling bias/RMSE/CI coverage); and
-shareable permalinks / CSV / SVG / Python-R export. The Validation table below tracks
-what's cross-checked against reference implementations as of today.
+IPW, and doubly-robust AIPW estimators; Monte-Carlo mode (repeated-sampling bias/RMSE/CI
+coverage); and shareable permalinks / CSV / SVG / Python-R export. The Validation table
+below tracks what's cross-checked against reference implementations as of today.
 
 ## How it works
 

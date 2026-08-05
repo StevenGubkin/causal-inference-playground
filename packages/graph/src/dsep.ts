@@ -16,7 +16,7 @@ export function modelParentsFn(model: Model): ParentsFn {
   return (id) => model.parentsOf(id);
 }
 
-function modelChildrenFn(model: Model): ParentsFn {
+export function modelChildrenFn(model: Model): ParentsFn {
   return (id) => model.childrenOf(id);
 }
 
@@ -28,12 +28,17 @@ export function withOutgoingEdgesRemoved(parentsOf: ParentsFn, treatment: NodeId
   return (id) => parentsOf(id).filter((p) => p !== treatment);
 }
 
-function reachableVia(fn: ParentsFn, starts: Iterable<NodeId>): Set<NodeId> {
+/** Reachability over `fn` (e.g. parents or children), optionally treating
+ * every node in `avoid` as a dead end -- used by `frontdoorValid` to check
+ * whether a directed path from X to Y survives once the mediator set is
+ * removed from the graph. */
+export function reachableVia(fn: ParentsFn, starts: Iterable<NodeId>, avoid: ReadonlySet<NodeId> = new Set()): Set<NodeId> {
   const visited = new Set<NodeId>();
   const stack = [...starts];
   while (stack.length > 0) {
     const current = stack.pop()!;
     for (const next of fn(current)) {
+      if (avoid.has(next)) continue;
       if (!visited.has(next)) {
         visited.add(next);
         stack.push(next);

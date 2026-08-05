@@ -16,8 +16,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fitMultivariateOLS, gcompDoseResponse, iv2sls } from 'estimators';
-import { backdoorValid, findBackdoorSet } from 'graph';
+import { fitMultivariateOLS, frontdoorDoseResponse, gcompDoseResponse, iv2sls } from 'estimators';
+import { backdoorValid, findBackdoorSet, frontdoorValid } from 'graph';
 import { parseModel } from 'scm-dsl';
 import type { Model } from 'scm-dsl';
 import { createRNG, forwardSample } from 'scm-engine';
@@ -120,6 +120,25 @@ function validateNaive(): void {
   check('naive OLS vs. statsmodels naive OLS', fit.coefficients[0]!, fixture.naive_ols_slope);
 }
 
+interface FrontdoorFixture {
+  frontdoor_estimate: number;
+}
+
+function validateFrontdoor(): void {
+  console.log('\n--- front-door adjustment (frontdoor.scm) vs. statsmodels two-stage OLS ---');
+  const fixture = loadFixture<FrontdoorFixture>('frontdoor-adjustment.json');
+
+  const parsed = parseModel(loadModelSource('frontdoor.scm'));
+  if (!parsed.ok) throw new Error(`frontdoor.scm failed to parse: ${JSON.stringify(parsed.errors)}`);
+
+  const sample = forwardSample(parsed.model, N, createRNG(3));
+  const observed = sample.observed();
+
+  const frontdoor = frontdoorDoseResponse(observed, 'X', 'Y', 'M', [0, 1]);
+  check('frontdoor estimate vs. statsmodels two-stage OLS', frontdoor.estimate, fixture.frontdoor_estimate);
+  checkBool('frontdoorValid({M})', frontdoorValid(parsed.model, 'X', 'Y', new Set(['M'])).ok, true);
+}
+
 interface DsepFixture {
   cases: {
     model: string;
@@ -161,6 +180,7 @@ console.log(`Validating against fixtures in ${FIXTURES_DIR} (n=${N})`);
 validateBackdoor();
 validateNaive();
 validateIv();
+validateFrontdoor();
 validateDsep();
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

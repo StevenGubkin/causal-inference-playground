@@ -7,5 +7,7 @@ export { kernelRidgeDoseResponse, fitKernelRidge, predictKernelRidge } from './k
 export type { KernelRidgeResult, KernelRidgeFit } from './kernelRidge.js';
 export { iv2sls } from './iv2sls.js';
 export type { Iv2slsResult } from './iv2sls.js';
+export { frontdoorDoseResponse } from './frontdoor.js';
+export type { FrontdoorResult } from './frontdoor.js';
 export { fitSimpleLinearRegression, predictOverGrid } from './ols.js';
 export type { LinearFit } from './ols.js';

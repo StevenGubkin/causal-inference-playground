@@ -6,6 +6,10 @@ CI without a Python runtime.
 
 - `backdoor-confounding.json` — confounding.scm vs. DoWhy/statsmodels.
 - `iv-late.json` — iv-late.scm vs. linearmodels `IV2SLS`.
+- `frontdoor-adjustment.json` — frontdoor.scm's two-stage regression vs.
+  statsmodels OLS, plus DoWhy's structural front-door-variable
+  identification (not its numeric estimate — see
+  `generate_frontdoor_fixture.py`'s docstring for why).
 - `dsep-adjustment-sets.json` — backdoor-criterion validity + minimal
   adjustment sets for confounding.scm/collider.scm/mediator.scm/M-bias vs.
   networkx `is_d_separator`. Purely structural (graph topology, no

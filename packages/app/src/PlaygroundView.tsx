@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRNG, doContrast, doResponse, forwardSample } from 'scm-engine';
 import type { Curve } from 'scm-engine';
-import { fitMultivariateOLS, gcompDoseResponse, iv2sls, kernelRidgeDoseResponse } from 'estimators';
-import { backdoorValid, findBackdoorSet, instrumentValid } from 'graph';
+import { fitMultivariateOLS, frontdoorDoseResponse, gcompDoseResponse, iv2sls, kernelRidgeDoseResponse } from 'estimators';
+import { backdoorValid, findBackdoorSet, frontdoorValid, instrumentValid } from 'graph';
 import { parseModel } from 'scm-dsl';
 import { ComparisonChart } from './ComparisonChart';
 import { DagView } from './DagView';
@@ -63,6 +63,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
   const [outcome, setOutcome] = useState(initialOutcome);
   const [adjustmentSet, setAdjustmentSet] = useState<Set<string>>(new Set());
   const [instrument, setInstrument] = useState('');
+  const [mediator, setMediator] = useState('');
   const [seed, setSeed] = useState(1);
   const [estimand, setEstimand] = useState<Estimand>('doseResponse');
   const [ateA, setAteA] = useState(0);
@@ -92,16 +93,28 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     [observedNodes, effectiveTreatment, effectiveOutcome],
   );
 
-  // Instrument tracks what the user picked, same fallback pattern as
+  // Instrument/mediator track what the user picked, same fallback pattern as
   // treatment/outcome; empty string means "none selected".
   const effectiveInstrument = instrument && availableCovariates.includes(instrument) ? instrument : '';
+  const effectiveMediator = mediator && availableCovariates.includes(mediator) ? mediator : '';
 
-  // A node can't be both the instrument and part of the adjustment set at
-  // once -- conditioning on your own instrument doesn't make sense. Each
-  // list excludes whatever the other currently holds, and the handlers
-  // below clear the other side on selection so this stays consistent.
-  const adjustmentCandidates = useMemo(() => availableCovariates.filter((id) => id !== effectiveInstrument), [availableCovariates, effectiveInstrument]);
-  const instrumentCandidates = useMemo(() => availableCovariates.filter((id) => !adjustmentSet.has(id)), [availableCovariates, adjustmentSet]);
+  // A node can't hold more than one of adjustment-covariate / instrument /
+  // mediator at once -- conditioning on your own instrument, or adjusting
+  // for your own mediator, doesn't make sense. Each list excludes whatever
+  // the other two currently hold, and the handlers below clear the other
+  // roles on selection so this stays consistent.
+  const adjustmentCandidates = useMemo(
+    () => availableCovariates.filter((id) => id !== effectiveInstrument && id !== effectiveMediator),
+    [availableCovariates, effectiveInstrument, effectiveMediator],
+  );
+  const instrumentCandidates = useMemo(
+    () => availableCovariates.filter((id) => !adjustmentSet.has(id) && id !== effectiveMediator),
+    [availableCovariates, adjustmentSet, effectiveMediator],
+  );
+  const mediatorCandidates = useMemo(
+    () => availableCovariates.filter((id) => !adjustmentSet.has(id) && id !== effectiveInstrument),
+    [availableCovariates, adjustmentSet, effectiveInstrument],
+  );
 
   function toggleCovariate(id: string) {
     setAdjustmentSet((prev) => {
@@ -111,6 +124,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       return next;
     });
     if (instrument === id) setInstrument('');
+    if (mediator === id) setMediator('');
   }
 
   function selectInstrument(id: string) {
@@ -122,6 +136,20 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
         next.delete(id);
         return next;
       });
+      if (mediator === id) setMediator('');
+    }
+  }
+
+  function selectMediator(id: string) {
+    setMediator(id);
+    if (id) {
+      setAdjustmentSet((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      if (instrument === id) setInstrument('');
     }
   }
 
@@ -189,6 +217,11 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     const ivResult = effectiveInstrument ? iv2sls(observed, effectiveTreatment, effectiveOutcome, effectiveInstrument, grid) : null;
     const ivGate = effectiveInstrument ? instrumentValid(model, effectiveTreatment, effectiveOutcome, effectiveInstrument) : null;
 
+    // Front-door (ARCHITECTURE.md §8/§9, METHODS.md §4): same "annotate,
+    // don't disable" philosophy as the backdoor/instrument gates above.
+    const frontdoorResult = effectiveMediator ? frontdoorDoseResponse(observed, effectiveTreatment, effectiveOutcome, effectiveMediator, grid) : null;
+    const frontdoorGate = effectiveMediator ? frontdoorValid(model, effectiveTreatment, effectiveOutcome, new Set([effectiveMediator])) : null;
+
     // ATE(a -> b): a direct two-point contrast, always well-defined
     // regardless of curve shape or basis degree -- no averaging-over-a-range
     // ambiguity, unlike the "avg. slope" summary above.
@@ -204,8 +237,8 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       ate = { naive: naiveAte, gcomp: gcompAte, true: trueAte };
     }
 
-    return { model, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment, ivResult, ivGate };
-  }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, basisMode, bandwidth, lambda, noiseSD, effectiveInstrument]);
+    return { model, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment, ivResult, ivGate, frontdoorResult, frontdoorGate };
+  }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, basisMode, bandwidth, lambda, noiseSD, effectiveInstrument, effectiveMediator]);
 
   return (
     <div>
@@ -333,6 +366,20 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                 </select>
               </label>
             )}
+
+            {mediatorCandidates.length > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ color: '#475569' }}>Mediator (front-door):</span>
+                <select value={effectiveMediator} onChange={(e) => selectMediator(e.target.value)}>
+                  <option value="">(none)</option>
+                  {mediatorCandidates.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           {adjustmentCandidates.length > 0 && (
@@ -356,6 +403,16 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                 <span style={{ color: '#15803d' }}>✓ valid instrument</span>
               ) : (
                 <span style={{ color: '#b45309' }}>✗ invalid instrument: {run.ivGate.reason}</span>
+              )}
+            </p>
+          )}
+
+          {run.frontdoorGate && (
+            <p style={{ margin: '0 0 12px', fontSize: 13 }}>
+              {run.frontdoorGate.ok ? (
+                <span style={{ color: '#15803d' }}>✓ valid front-door mediator</span>
+              ) : (
+                <span style={{ color: '#b45309' }}>✗ invalid mediator: {run.frontdoorGate.reason}</span>
               )}
             </p>
           )}
@@ -459,6 +516,14 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
             </div>
           )}
 
+          {run.frontdoorResult && (
+            <div style={{ display: 'flex', gap: 24, margin: '0 0 16px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
+              <div>
+                front-door estimate: <strong style={{ color: '#db2777' }}>{run.frontdoorResult.estimate.toFixed(3)}</strong>
+              </div>
+            </div>
+          )}
+
           <ComparisonChart
             xs={run.xs}
             ys={run.ys}
@@ -476,6 +541,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                 : null
             }
             iv={run.ivResult ? { grid: run.ivResult.grid, ys: run.ivResult.ys, label: `2SLS via ${effectiveInstrument}` } : null}
+            frontdoor={run.frontdoorResult ? { grid: run.frontdoorResult.grid, ys: run.frontdoorResult.ys, label: `front-door via ${effectiveMediator}` } : null}
             treatment={effectiveTreatment}
             outcome={effectiveOutcome}
           />

@@ -22,6 +22,7 @@ uv sync                 # creates .venv, installs numpy/pandas/dowhy/statsmodels
 ```bash
 uv run python scripts/generate_backdoor_fixture.py
 uv run python scripts/generate_iv_fixture.py
+uv run python scripts/generate_frontdoor_fixture.py
 uv run python scripts/generate_dsep_fixture.py
 ```
 
@@ -44,6 +45,16 @@ it.
   heteroskedasticity-robust and chi²-distributed by default, a different
   statistic from the classical F our TypeScript implementation computes, so
   comparing against it directly would be apples-to-oranges.
+- `generate_frontdoor_fixture.py` — frontdoor.scm's two-stage regression
+  (`M ~ X`, then `Y ~ M + X`) vs. statsmodels OLS, plus DoWhy used
+  structurally only (`identify_effect().get_frontdoor_variables()`) to
+  confirm it identifies `M` as the front-door variable. **Not** DoWhy's own
+  `frontdoor.two_stage_regression` numeric estimate — as of `dowhy==0.14`
+  that estimator has a real bug where its second-stage regression silently
+  drops the required adjustment for `X` (it looks up the wrong
+  `identifier_method` key internally), giving a biased number. See the
+  script's docstring for the full trace; don't "fix" the fixture back
+  toward that biased value later.
 - `generate_dsep_fixture.py` — backdoor-criterion validity
   (`backdoorValid`) and minimal adjustment sets (`findBackdoorSet`) for
   confounding.scm/collider.scm/mediator.scm, plus the inline M-bias graph
@@ -57,8 +68,7 @@ it.
   so there's nothing to cross-check there so far.
 
 Not yet implemented: g-computation's flexible basis vs. statsmodels, IPW/AIPW
-vs. DoWhy/EconML, front-door vs. DoWhy (no `ipw`/`aipw`/`frontdoor` estimator
-exists yet to validate), graph testable implications (needs
-`testableImplications()` implemented first), and the Hernán & Robins "What
-If" worked examples (needs sourcing/licensing the actual published
-datasets).
+vs. DoWhy/EconML (no `ipw`/`aipw` estimator exists yet to validate), graph
+testable implications (needs `testableImplications()` implemented first),
+and the Hernán & Robins "What If" worked examples (needs sourcing/licensing
+the actual published datasets).

@@ -1,0 +1,19 @@
+{
+  "problem": "front-door adjustment (frontdoor.scm)",
+  "dgp": "latent U ~ Normal(0,1); X = 2*U + eps; M = 2*X + eps; Y = 3*M + 5*U + eps",
+  "n": 20000,
+  "seed": 20260803,
+  "naive_ols_slope": 8.007926271469707,
+  "stage1_coef": 2.0011750218798405,
+  "stage2_coef_mediator": 3.0035911957490873,
+  "stage2_coef_treatment": 1.9972145945984368,
+  "frontdoor_estimate": 6.010711676871276,
+  "true_effect": 6.0,
+  "dowhy_frontdoor_variables": [
+    "M"
+  ],
+  "references": {
+    "statsmodels": "0.14.6",
+    "dowhy": "0.14"
+  }
+}

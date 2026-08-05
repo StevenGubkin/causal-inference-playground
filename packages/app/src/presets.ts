@@ -1,5 +1,6 @@
 import confoundingSrc from '../../examples/models/confounding.scm?raw';
 import colliderSrc from '../../examples/models/collider.scm?raw';
+import frontdoorSrc from '../../examples/models/frontdoor.scm?raw';
 import ivLateSrc from '../../examples/models/iv-late.scm?raw';
 import mediatorSrc from '../../examples/models/mediator.scm?raw';
 import nonlinearSrc from '../../examples/models/nonlinear.scm?raw';
@@ -62,5 +63,13 @@ export const PRESETS: Preset[] = [
     treatment: 'X',
     outcome: 'Y',
     caption: 'The true curve is a cosine — a degree-1 fit can\'t represent that shape at all. Raise the basis degree (~6) and adjust for C to watch g-computation recover it.',
+  },
+  {
+    id: 'frontdoor',
+    label: 'Front-door adjustment',
+    source: frontdoorSrc,
+    treatment: 'X',
+    outcome: 'Y',
+    caption: 'U confounds X and Y but is unobserved — no valid backdoor set exists, so naive is badly biased. Set M as the mediator (front-door) to recover the true effect of 6.0 anyway.',
   },
 ];
