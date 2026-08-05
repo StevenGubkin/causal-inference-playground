@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { createRNG, doContrast, doResponse, forwardSample, lateContrast } from 'scm-engine';
 import type { Curve } from 'scm-engine';
 import { fitMultivariateOLS, frontdoorDoseResponse, gcompDoseResponse, iv2sls, kernelRidgeDoseResponse } from 'estimators';
 import { backdoorValid, findBackdoorSet, frontdoorValid, instrumentValid } from 'graph';
 import { parseModel, parseStatements } from 'scm-dsl';
+import { decodePermalink, describePermalinkError, encodePermalink } from 'share';
+import type { DecodeResult } from 'share';
 import { ComparisonChart } from './ComparisonChart';
 import { DagView } from './DagView';
 import { statementToLatex } from './equationLatex';
 import { downloadFile, modelToPython, modelToSvg, sampleToCsv } from './export/index.js';
+import { clampBandwidth, clampDegree, clampLambda, clampNoiseSD } from './limits.js';
 import { MathField } from './MathField';
 
 const SAMPLE_SIZE = 500;
@@ -61,21 +65,33 @@ interface PlaygroundViewProps {
 }
 
 export function PlaygroundView({ initialSource, initialTreatment, initialOutcome, caption }: PlaygroundViewProps) {
-  const [source, setSource] = useState(initialSource);
-  const [treatment, setTreatment] = useState(initialTreatment);
-  const [outcome, setOutcome] = useState(initialOutcome);
-  const [adjustmentSet, setAdjustmentSet] = useState<Set<string>>(new Set());
-  const [instrument, setInstrument] = useState('');
-  const [mediator, setMediator] = useState('');
-  const [seed, setSeed] = useState(1);
-  const [estimand, setEstimand] = useState<Estimand>('doseResponse');
-  const [ateA, setAteA] = useState(0);
-  const [ateB, setAteB] = useState(1);
-  const [degree, setDegree] = useState(1);
-  const [basisMode, setBasisMode] = useState<BasisMode>('polynomial');
-  const [bandwidth, setBandwidth] = useState(1);
-  const [lambda, setLambda] = useState(0.1);
-  const [noiseSD, setNoiseSD] = useState(1);
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  // Decode exactly once, at mount, from whatever `state` was present in the
+  // URL at that moment -- not tracked afterward (no live URL sync, see the
+  // "Copy permalink" button below), so no dependency on searchParams here.
+  const [decodeResult] = useState<DecodeResult | null>(() => {
+    const raw = searchParams.get('state');
+    return raw ? decodePermalink(raw) : null;
+  });
+  const decoded = decodeResult?.ok ? decodeResult.payload : null;
+
+  const [source, setSource] = useState(decoded?.model ?? initialSource);
+  const [treatment, setTreatment] = useState(decoded?.query.treatment ?? initialTreatment);
+  const [outcome, setOutcome] = useState(decoded?.query.outcome ?? initialOutcome);
+  const [adjustmentSet, setAdjustmentSet] = useState<Set<string>>(new Set(decoded?.query.adjustmentSet ?? []));
+  const [instrument, setInstrument] = useState(decoded?.query.instrument ?? '');
+  const [mediator, setMediator] = useState(decoded?.query.mediator ?? '');
+  const [seed, setSeed] = useState(decoded?.seed ?? 1);
+  const [estimand, setEstimand] = useState<Estimand>(decoded?.query.estimand ?? 'doseResponse');
+  const [ateA, setAteA] = useState(decoded?.query.ateA ?? 0);
+  const [ateB, setAteB] = useState(decoded?.query.ateB ?? 1);
+  const [degree, setDegree] = useState(clampDegree(decoded?.query.degree ?? 1));
+  const [basisMode, setBasisMode] = useState<BasisMode>(decoded?.query.basisMode ?? 'polynomial');
+  const [bandwidth, setBandwidth] = useState(clampBandwidth(decoded?.query.bandwidth ?? 1));
+  const [lambda, setLambda] = useState(clampLambda(decoded?.query.lambda ?? 0.1));
+  const [noiseSD, setNoiseSD] = useState(clampNoiseSD(decoded?.query.noiseSD ?? 1));
+  const [permalinkCopied, setPermalinkCopied] = useState(false);
 
   const debouncedSource = useDebouncedValue(source, SOURCE_DEBOUNCE_MS);
   const parsed = useMemo(() => parseModel(debouncedSource), [debouncedSource]);
@@ -159,6 +175,41 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       });
       if (instrument === id) setInstrument('');
     }
+  }
+
+  function copyPermalink() {
+    // Encode the *sanitized* effective* values, not the raw treatment/
+    // instrument/mediator state -- so a permalink never encodes a stale
+    // identifier that no longer exists in the current model text (harmless
+    // either way, given the same self-healing fallback on decode, but
+    // pointless to encode garbage on purpose when the clean value is right
+    // here).
+    const encoded = encodePermalink({
+      model: source,
+      query: {
+        treatment: effectiveTreatment,
+        outcome: effectiveOutcome,
+        adjustmentSet: Array.from(adjustmentSet),
+        instrument: effectiveInstrument,
+        mediator: effectiveMediator,
+        estimand,
+        ateA,
+        ateB,
+        degree,
+        basisMode,
+        bandwidth,
+        lambda,
+        noiseSD,
+      },
+      seed,
+    });
+    // compressToEncodedURIComponent's output is already URL-safe -- no
+    // additional encodeURIComponent wrapping (that would double-encode it).
+    const url = `${window.location.origin}${window.location.pathname}#${location.pathname}?state=${encoded}`;
+    void navigator.clipboard.writeText(url).then(() => {
+      setPermalinkCopied(true);
+      setTimeout(() => setPermalinkCopied(false), 1500);
+    });
   }
 
   const run = useMemo(() => {
@@ -259,6 +310,12 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     <div>
       {caption && <p style={{ color: '#334155', fontStyle: 'italic' }}>{caption}</p>}
 
+      {decodeResult && !decodeResult.ok && (
+        <p style={{ background: '#fef2f2', color: '#991b1b', padding: 12, borderRadius: 8, marginBottom: 12 }}>
+          Couldn't open this permalink: {describePermalinkError(decodeResult.error)} Showing the default model instead.
+        </p>
+      )}
+
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', margin: '16px 0', flexWrap: 'wrap' }}>
         <button type="button" onClick={() => setSeed((s) => s + 1)}>
           Resample (seed {seed})
@@ -274,7 +331,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
         {basisMode === 'polynomial' ? (
           <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ color: '#475569' }}>degree</span>
-            <input type="number" value={degree} min={1} max={9} step={1} style={{ width: 56 }} onChange={(e) => setDegree(Math.round(e.target.valueAsNumber) || 1)} />
+            <input type="number" value={degree} min={1} max={9} step={1} style={{ width: 56 }} onChange={(e) => setDegree(clampDegree(e.target.valueAsNumber))} />
           </label>
         ) : (
           <>
@@ -286,7 +343,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                 min={0.05}
                 step={0.05}
                 style={{ width: 64 }}
-                onChange={(e) => setBandwidth(Math.max(0.05, e.target.valueAsNumber) || 1)}
+                onChange={(e) => setBandwidth(clampBandwidth(e.target.valueAsNumber))}
               />
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -297,14 +354,14 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                 min={0.0001}
                 step={0.01}
                 style={{ width: 64 }}
-                onChange={(e) => setLambda(Math.max(0.0001, e.target.valueAsNumber) || 0.0001)}
+                onChange={(e) => setLambda(clampLambda(e.target.valueAsNumber))}
               />
             </label>
           </>
         )}
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ color: '#475569' }}>noise σ</span>
-          <input type="number" value={noiseSD} min={0} max={5} step={0.25} style={{ width: 56 }} onChange={(e) => setNoiseSD(e.target.valueAsNumber)} />
+          <input type="number" value={noiseSD} min={0} max={5} step={0.25} style={{ width: 56 }} onChange={(e) => setNoiseSD(clampNoiseSD(e.target.valueAsNumber))} />
         </label>
       </div>
 
@@ -634,6 +691,9 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
               }
             >
               analysis (Python)
+            </button>
+            <button type="button" onClick={copyPermalink}>
+              {permalinkCopied ? 'Copied!' : 'copy permalink'}
             </button>
           </div>
         </>
