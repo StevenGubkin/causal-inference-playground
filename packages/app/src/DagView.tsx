@@ -4,7 +4,7 @@ import '@xyflow/react/dist/style.css';
 import type { Model } from 'scm-dsl';
 import { layeredLayout } from './layout';
 
-const ROLE_COLORS = {
+export const ROLE_COLORS = {
   treatment: '#3b5bdb',
   outcome: '#099268',
   adjusted: '#e8a33d',

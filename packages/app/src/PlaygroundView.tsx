@@ -3,9 +3,12 @@ import { createRNG, doContrast, doResponse, forwardSample, lateContrast } from '
 import type { Curve } from 'scm-engine';
 import { fitMultivariateOLS, frontdoorDoseResponse, gcompDoseResponse, iv2sls, kernelRidgeDoseResponse } from 'estimators';
 import { backdoorValid, findBackdoorSet, frontdoorValid, instrumentValid } from 'graph';
-import { parseModel } from 'scm-dsl';
+import { parseModel, parseStatements } from 'scm-dsl';
 import { ComparisonChart } from './ComparisonChart';
 import { DagView } from './DagView';
+import { statementToLatex } from './equationLatex';
+import { downloadFile, modelToPython, modelToSvg, sampleToCsv } from './export/index.js';
+import { MathField } from './MathField';
 
 const SAMPLE_SIZE = 500;
 const ORACLE_REPLICATES = 3000;
@@ -76,6 +79,11 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
 
   const debouncedSource = useDebouncedValue(source, SOURCE_DEBOUNCE_MS);
   const parsed = useMemo(() => parseModel(debouncedSource), [debouncedSource]);
+  // Syntax-level only (parseStatements, not the full parseModel/validate
+  // pipeline) so the math preview keeps rendering whatever lines are
+  // individually well-formed even while other lines have cross-referential
+  // errors (an unknown identifier, say) that only validate() catches.
+  const equationStatements = useMemo(() => parseStatements(debouncedSource).statements, [debouncedSource]);
 
   const observedNodes = useMemo(() => (parsed.ok ? parsed.model.observed() : []), [parsed]);
 
@@ -244,7 +252,7 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       ate = { naive: naiveAte, gcomp: gcompAte, true: trueAte };
     }
 
-    return { model, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment, ivResult, ivGate, trueLate, frontdoorResult, frontdoorGate };
+    return { model, observed, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment, ivResult, ivGate, trueLate, frontdoorResult, frontdoorGate };
   }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, basisMode, bandwidth, lambda, noiseSD, effectiveInstrument, effectiveMediator]);
 
   return (
@@ -299,6 +307,25 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
           <input type="number" value={noiseSD} min={0} max={5} step={0.25} style={{ width: 56 }} onChange={(e) => setNoiseSD(e.target.valueAsNumber)} />
         </label>
       </div>
+
+      {equationStatements.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            padding: '10px 12px',
+            marginBottom: 8,
+            border: '1px solid #cbd5e1',
+            borderRadius: 8,
+            boxSizing: 'border-box',
+          }}
+        >
+          {equationStatements.map((stmt) => (
+            <MathField key={stmt.line} latex={statementToLatex(stmt)} />
+          ))}
+        </div>
+      )}
 
       <textarea
         value={source}
@@ -566,6 +593,49 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
             treatment={effectiveTreatment}
             outcome={effectiveOutcome}
           />
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '12px 0 0', flexWrap: 'wrap' }}>
+            <span style={{ color: '#475569', fontSize: 13 }}>Export:</span>
+            <button type="button" onClick={() => downloadFile('model.scm', source, 'text/plain')}>
+              model (.scm)
+            </button>
+            <button type="button" onClick={() => downloadFile('sample.csv', sampleToCsv(run.observed), 'text/csv')}>
+              sample (CSV)
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadFile('dag.svg', modelToSvg(run.model, effectiveTreatment, effectiveOutcome, adjustmentSet), 'image/svg+xml')}
+            >
+              DAG (SVG)
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadFile(
+                  'analysis.py',
+                  modelToPython({
+                    source,
+                    model: run.model,
+                    treatment: effectiveTreatment,
+                    outcome: effectiveOutcome,
+                    adjustmentSet,
+                    instrument: effectiveInstrument || null,
+                    mediator: effectiveMediator || null,
+                    basisMode,
+                    degree,
+                    bandwidth,
+                    lambda,
+                    seed,
+                    noiseSD,
+                    sampleSize: SAMPLE_SIZE,
+                  }),
+                  'text/x-python',
+                )
+              }
+            >
+              analysis (Python)
+            </button>
+          </div>
         </>
       )}
 
