@@ -10,6 +10,7 @@ function src(pkg: string): string {
 }
 
 export default defineConfig({
+  base: '/causal-inference-playground/',
   plugins: [react()],
   resolve: {
     alias: {
