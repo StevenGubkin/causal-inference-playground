@@ -1,7 +1,7 @@
 """ARCHITECTURE.md §10b -- IV/2SLS (LATE) cross-check.
 
 Replicates iv-late.scm's DGP directly in numpy (METHODS.md's "Worked
-construction: compliance heterogeneity" -- potential-outcome parents D0/D1,
+construction: compliance heterogeneity" -- potential-outcome parents D_0/D_1,
 monotonicity via max(), Z affecting Y only through D) and runs linearmodels'
 IV2SLS as an independent reference implementation of our own iv2sls.ts.
 
@@ -53,14 +53,14 @@ def main() -> None:
     # Population ATE for context (not what 2SLS should match -- the whole
     # point of this construction is that it doesn't). Computed the same way
     # our oracle does: fix D for everyone and average tau over the
-    # population, since D0/D1 (and therefore tau) are unaffected by which
+    # population, since D_0/D_1 (and therefore tau) are unaffected by which
     # value D is set to.
     true_ate = float(np.mean(tau))
 
     fixture = {
         "problem": "IV/2SLS (LATE) (iv-late.scm)",
-        "dgp": "potential-outcome parents D0/D1 (METHODS.md worked construction); "
-        "D0~Bernoulli(logistic(-0.5+0.8U)); D1=max(D0, D1extra); D=D0+(D1-D0)*Z",
+        "dgp": "potential-outcome parents D_0/D_1 (METHODS.md worked construction); "
+        "D_0~Bernoulli(logistic(-0.5+0.8U)); D_1=max(D_0, D_extra); D=D_0+(D_1-D_0)*Z",
         "n": N,
         "seed": SEED,
         "iv2sls_estimate": estimate,

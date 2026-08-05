@@ -46,7 +46,7 @@ describe('golden test 1: intervention by mutilation (ARCHITECTURE.md §10a)', ()
 });
 
 describe('lateContrast: the true LATE differs from the population ATE under compliance heterogeneity', () => {
-  // iv-late.scm: Y = (1*D0*D1 + 3*(1-D0)*D1)*D + 1.5*U + eps -- always-takers
+  // iv-late.scm: Y = (1*D_0*D_1 + 3*(1-D_0)*D_1)*D + 1.5*U + eps -- always-takers
   // get effect 1, compliers get effect 3. doContrast (population ATE) mixes
   // both by population share; lateContrast should isolate the compliers'
   // effect of exactly 3, distinct from the population figure.

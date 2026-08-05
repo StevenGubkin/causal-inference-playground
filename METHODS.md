@@ -173,24 +173,24 @@ instrument level — as parents of the observed treatment, rather than modeling
 "compliance type" as a categorical draw:
 
 ```
-latent U        ~ Normal(0, 1)
-latent D0       ~ Bernoulli(logistic(a0 + a1*U))
-latent D1extra  ~ Bernoulli(logistic(b0 + b1*U))
-latent D1       = max(D0, D1extra)
-Z               ~ Bernoulli(0.5)
-D               = D0 + (D1 - D0)*Z
-Y               = c0 + (tauAT*D0*D1 + tauC*(1-D0)*D1)*D + gamma*U + eps
+latent U       ~ Normal(0, 1)
+latent D_0     ~ Bernoulli(logistic(a0 + a1*U))
+latent D_extra ~ Bernoulli(logistic(b0 + b1*U))
+latent D_1     = max(D_0, D_extra)
+Z              ~ Bernoulli(0.5)
+D              = D_0 + (D_1 - D_0)*Z
+Y              = c0 + (tauAT*D_0*D_1 + tauC*(1-D_0)*D_1)*D + gamma*U + eps
 ```
 
-- **Monotonicity is structural.** `D1 = max(D0, D1extra)` forces `D1 ≥ D0`
+- **Monotonicity is structural.** `D_1 = max(D_0, D_extra)` forces `D_1 ≥ D_0`
   for every unit, so defiers cannot exist — the assumption doesn't need to be
   policed, it falls out of the equation.
 - **Exclusion is structural.** `Z` appears only in `D`'s equation, never in
   `Y`'s; the graph cannot violate exclusion unless an edge is added.
 - **Confounding is real.** `U` drives both compliance behavior and `Y`
   directly, so the naive/OLS estimate is biased and an instrument is needed.
-- **Heterogeneity falls out of the `D0`, `D1` interaction terms.**
-  `(1-D0)*D1` is 1 only for compliers, `D0*D1` only for always-takers;
+- **Heterogeneity falls out of the `D_0`, `D_1` interaction terms.**
+  `(1-D_0)*D_1` is 1 only for compliers, `D_0*D_1` only for always-takers;
   never-takers have `D=0` under any `Z`, so their `tau` term never
   activates — matching the fact that their response is structurally
   unobservable, not just unidentified.
@@ -204,7 +204,7 @@ model itself.
 Two variants of this same skeleton are worth shipping as gallery entries in
 their own right (see ARCHITECTURE.md §13): add a direct `Z → Y` edge to break
 exclusion (2SLS biased despite a strong first stage), or replace
-`D1 = max(D0, D1extra)` with an independent `D1 ~ Bernoulli(...)` to admit
+`D_1 = max(D_0, D_extra)` with an independent `D_1 ~ Bernoulli(...)` to admit
 defiers and break monotonicity (2SLS's estimand stops being a clean LATE).
 
 ### Front-door adjustment

@@ -41,17 +41,17 @@ describe('gallery presets parse into a validated Model (Phase 0 deliverable)', (
     expect(result.model.parentsOf('Y').sort()).toEqual(['X', 'Z']);
   });
 
-  it('iv-late.scm: the one latent model — D0/D1extra/D1/U are latent, Z/D/Y observed', () => {
+  it('iv-late.scm: the one latent model — D_0/D_extra/D_1/U are latent, Z/D/Y observed', () => {
     const result = parseModel(readModel('iv-late.scm'));
     if (!result.ok) throw new Error(JSON.stringify(result.errors));
     const latentIds = [...result.model.nodes.values()].filter((n) => n.visibility === 'latent').map((n) => n.id);
-    expect(new Set(latentIds)).toEqual(new Set(['U', 'D0', 'D1extra', 'D1']));
+    expect(new Set(latentIds)).toEqual(new Set(['U', 'D_0', 'D_extra', 'D_1']));
     expect(new Set(result.model.observed())).toEqual(new Set(['Z', 'D', 'Y']));
-    // monotonicity-by-construction: D1 = max(D0, D1extra)
-    expect(result.model.parentsOf('D1').sort()).toEqual(['D0', 'D1extra']);
+    // monotonicity-by-construction: D_1 = max(D_0, D_extra)
+    expect(result.model.parentsOf('D_1').sort()).toEqual(['D_0', 'D_extra']);
     // exclusion-by-construction: Z reaches Y only through D
     expect(result.model.parentsOf('Y')).not.toContain('Z');
-    expect(result.model.parentsOf('D').sort()).toEqual(['D0', 'D1', 'Z']);
+    expect(result.model.parentsOf('D').sort()).toEqual(['D_0', 'D_1', 'Z']);
   });
 });
 

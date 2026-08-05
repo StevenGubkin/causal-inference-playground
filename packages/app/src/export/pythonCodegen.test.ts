@@ -78,7 +78,7 @@ describe('modelToPython', () => {
 
     expect(script).toContain('IV / 2SLS via Z');
     expect(script).toContain('iv_stage1 = sm.OLS(data["D"], sm.add_constant(data["Z"]))');
-    // D0/D1/D1extra/U are latent -- must not appear in the observed data frame.
+    // D_0/D_1/D_extra/U are latent -- must not appear in the observed data frame.
     expect(script).toMatch(/data = pd\.DataFrame\(\{"Z": Z, "D": D, "Y": Y\}\)/);
   });
 
