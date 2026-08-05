@@ -3,6 +3,8 @@
 // estimate() runs. Zero UI dependencies (§3).
 export { gcompDoseResponse, fitMultivariateOLS, predictMultivariate } from './gcomp.js';
 export type { GcompResult, MultivariateFit } from './gcomp.js';
+export { kernelRidgeDoseResponse, fitKernelRidge, predictKernelRidge } from './kernelRidge.js';
+export type { KernelRidgeResult, KernelRidgeFit } from './kernelRidge.js';
 export { iv2sls } from './iv2sls.js';
 export type { Iv2slsResult } from './iv2sls.js';
 export { fitSimpleLinearRegression, predictOverGrid } from './ols.js';

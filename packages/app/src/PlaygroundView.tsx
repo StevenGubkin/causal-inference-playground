@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRNG, doContrast, doResponse, forwardSample } from 'scm-engine';
 import type { Curve } from 'scm-engine';
-import { fitMultivariateOLS, gcompDoseResponse, iv2sls } from 'estimators';
+import { fitMultivariateOLS, gcompDoseResponse, iv2sls, kernelRidgeDoseResponse } from 'estimators';
 import { backdoorValid, findBackdoorSet, instrumentValid } from 'graph';
 import { parseModel } from 'scm-dsl';
 import { ComparisonChart } from './ComparisonChart';
@@ -48,6 +48,7 @@ function rmseAgainstTruth(estimatedYs: number[], trueYs: number[]): number {
 }
 
 type Estimand = 'doseResponse' | 'ate';
+type BasisMode = 'polynomial' | 'kernelRidge';
 
 interface PlaygroundViewProps {
   initialSource: string;
@@ -67,6 +68,9 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
   const [ateA, setAteA] = useState(0);
   const [ateB, setAteB] = useState(1);
   const [degree, setDegree] = useState(1);
+  const [basisMode, setBasisMode] = useState<BasisMode>('polynomial');
+  const [bandwidth, setBandwidth] = useState(1);
+  const [lambda, setLambda] = useState(0.1);
   const [noiseSD, setNoiseSD] = useState(1);
 
   const debouncedSource = useDebouncedValue(source, SOURCE_DEBOUNCE_MS);
@@ -138,22 +142,33 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     }
     const grid = Array.from({ length: GRID_POINTS }, (_, i) => gridMin + ((gridMax - gridMin) * i) / (GRID_POINTS - 1));
 
-    // "naive" is g-computation with an empty adjustment set -- one code path
-    // for both curves at any basis degree, rather than a separate
-    // closed-form implementation that has to stay in sync with it.
-    const naiveCurve = gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, [], grid, degree);
+    // The flexible-in-X basis is a toggle, not a stack: polynomial (degree
+    // N) or kernel ridge (RBF, bandwidth/lambda), one or the other. Both
+    // share the same (observed, treatment, outcome, adjustment, points) ->
+    // {grid, ys} shape, so every call site below just dispatches on mode.
+    function computeCurve(adjustment: string[], points: number[]) {
+      return basisMode === 'polynomial'
+        ? gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, adjustment, points, degree)
+        : kernelRidgeDoseResponse(observed, effectiveTreatment, effectiveOutcome, adjustment, points, bandwidth, lambda);
+    }
+
+    // "naive" is g-computation (or kernel ridge) with an empty adjustment
+    // set -- one code path for both curves at any basis, rather than a
+    // separate closed-form implementation that has to stay in sync with it.
+    const naiveCurve = computeCurve([], grid);
     const naiveYs = naiveCurve.ys;
-    // A polynomial fit doesn't have a single slope, so only fit/show this at
-    // degree 1 -- and since we authored the fit, no need to numerically
-    // detect its shape the way isApproximatelyLinear does for the oracle.
-    const naiveSlopeFit = degree === 1 ? fitMultivariateOLS([xs], ys) : null;
+    // Only a degree-1 polynomial fit has a single slope, so only fit/show
+    // this in that case -- and since we authored the fit, no need to
+    // numerically detect its shape the way isApproximatelyLinear does for
+    // the oracle.
+    const naiveSlopeFit = basisMode === 'polynomial' && degree === 1 ? fitMultivariateOLS([xs], ys) : null;
 
     const trueCurve = doResponse(model, effectiveTreatment, effectiveOutcome, grid, ORACLE_REPLICATES, createRNG(seed + 1000), noiseSD);
     const isLinear = isApproximatelyLinear(trueCurve);
     const trueAvgSlope = doContrast(model, effectiveTreatment, effectiveOutcome, gridMin, gridMax, ORACLE_REPLICATES, createRNG(seed + 2000), noiseSD) / (gridMax - gridMin);
 
     const adjustment = availableCovariates.filter((id) => adjustmentSet.has(id));
-    const gcompCurve = adjustment.length > 0 ? gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, adjustment, grid, degree) : null;
+    const gcompCurve = adjustment.length > 0 ? computeCurve(adjustment, grid) : null;
     const gcompAvgSlope = gcompCurve && degree === 1 ? (gcompCurve.ys[gcompCurve.ys.length - 1]! - gcompCurve.ys[0]!) / (gridMax - gridMin) : null;
 
     // Identifiability gate (ARCHITECTURE.md §9/§11): report whether the
@@ -179,18 +194,18 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     // ambiguity, unlike the "avg. slope" summary above.
     let ate: { naive: number; gcomp: number | null; true: number } | null = null;
     if (estimand === 'ate' && Number.isFinite(ateA) && Number.isFinite(ateB)) {
-      const naivePair = gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, [], [ateA, ateB], degree);
+      const naivePair = computeCurve([], [ateA, ateB]);
       const naiveAte = naivePair.ys[1]! - naivePair.ys[0]!;
       const trueAte = doContrast(model, effectiveTreatment, effectiveOutcome, ateA, ateB, ORACLE_REPLICATES, createRNG(seed + 3000), noiseSD);
       const gcompAte = adjustment.length > 0 ? (() => {
-        const c = gcompDoseResponse(observed, effectiveTreatment, effectiveOutcome, adjustment, [ateA, ateB], degree);
+        const c = computeCurve(adjustment, [ateA, ateB]);
         return c.ys[1]! - c.ys[0]!;
       })() : null;
       ate = { naive: naiveAte, gcomp: gcompAte, true: trueAte };
     }
 
     return { model, xs, ys, naiveSlopeFit, grid, naiveYs, trueCurve, isLinear, trueAvgSlope, gcompCurve, gcompAvgSlope, naiveRmse, gcompRmse, adjustment, ate, gate, suggestedAdjustment, ivResult, ivGate };
-  }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, noiseSD, effectiveInstrument]);
+  }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, basisMode, bandwidth, lambda, noiseSD, effectiveInstrument]);
 
   return (
     <div>
@@ -201,9 +216,44 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
           Resample (seed {seed})
         </button>
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ color: '#475569' }}>basis degree</span>
-          <input type="number" value={degree} min={1} max={9} step={1} style={{ width: 56 }} onChange={(e) => setDegree(Math.round(e.target.valueAsNumber) || 1)} />
+          <input type="radio" name="basisMode" checked={basisMode === 'polynomial'} onChange={() => setBasisMode('polynomial')} />
+          <span style={{ color: '#475569' }}>polynomial</span>
         </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="radio" name="basisMode" checked={basisMode === 'kernelRidge'} onChange={() => setBasisMode('kernelRidge')} />
+          <span style={{ color: '#475569' }}>kernel ridge (RBF)</span>
+        </label>
+        {basisMode === 'polynomial' ? (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: '#475569' }}>degree</span>
+            <input type="number" value={degree} min={1} max={9} step={1} style={{ width: 56 }} onChange={(e) => setDegree(Math.round(e.target.valueAsNumber) || 1)} />
+          </label>
+        ) : (
+          <>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ color: '#475569' }}>bandwidth</span>
+              <input
+                type="number"
+                value={bandwidth}
+                min={0.05}
+                step={0.05}
+                style={{ width: 64 }}
+                onChange={(e) => setBandwidth(Math.max(0.05, e.target.valueAsNumber) || 1)}
+              />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ color: '#475569' }}>λ</span>
+              <input
+                type="number"
+                value={lambda}
+                min={0.0001}
+                step={0.01}
+                style={{ width: 64 }}
+                onChange={(e) => setLambda(Math.max(0.0001, e.target.valueAsNumber) || 0.0001)}
+              />
+            </label>
+          </>
+        )}
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ color: '#475569' }}>noise σ</span>
           <input type="number" value={noiseSD} min={0} max={5} step={0.25} style={{ width: 56 }} onChange={(e) => setNoiseSD(e.target.valueAsNumber)} />
@@ -352,15 +402,17 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                     g-comp slope: <strong style={{ color: '#2563eb' }}>{run.gcompAvgSlope.toFixed(3)}</strong>
                   </div>
                 )}
-                {run.isLinear && degree === 1 ? (
+                {run.isLinear && basisMode === 'polynomial' && degree === 1 ? (
                   <div>
                     true effect (slope): <strong style={{ color: '#16a34a' }}>{run.trueAvgSlope.toFixed(3)}</strong>
                   </div>
                 ) : (
                   <div style={{ color: '#92400e' }}>
-                    {degree > 1
-                      ? 'basis degree > 1 — no single "slope"; see the curve, or switch to a two-point estimate below'
-                      : 'true curve is nonlinear here — a single "slope" wouldn\'t mean much; see the chart, or switch to a two-point estimate below'}
+                    {basisMode === 'kernelRidge'
+                      ? 'kernel ridge basis — no single "slope"; see the curve, or switch to a two-point estimate below'
+                      : degree > 1
+                        ? 'basis degree > 1 — no single "slope"; see the curve, or switch to a two-point estimate below'
+                        : 'true curve is nonlinear here — a single "slope" wouldn\'t mean much; see the chart, or switch to a two-point estimate below'}
                   </div>
                 )}
               </>
@@ -414,7 +466,15 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
             naiveYs={run.naiveYs}
             trueGrid={run.trueCurve.xs}
             trueYs={run.trueCurve.ys}
-            gcomp={run.gcompCurve ? { grid: run.gcompCurve.grid, ys: run.gcompCurve.ys, label: `g-comp adjusting for {${run.adjustment.join(', ')}}` } : null}
+            gcomp={
+              run.gcompCurve
+                ? {
+                    grid: run.gcompCurve.grid,
+                    ys: run.gcompCurve.ys,
+                    label: `g-comp adjusting for {${run.adjustment.join(', ')}} (${basisMode === 'polynomial' ? `poly deg ${degree}` : `RBF bw=${bandwidth}, λ=${lambda}`})`,
+                  }
+                : null
+            }
             iv={run.ivResult ? { grid: run.ivResult.grid, ys: run.ivResult.ys, label: `2SLS via ${effectiveInstrument}` } : null}
             treatment={effectiveTreatment}
             outcome={effectiveOutcome}
