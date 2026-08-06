@@ -162,10 +162,9 @@ Working today:
   uncertainty directly: naive's interval is tight *and excludes the true effect*,
   while the adjusted estimators' intervals correctly contain it.
 
-Planned, not yet built (tracked in [ARCHITECTURE.md](./ARCHITECTURE.md)): an
-embeddable `<iframe>`/web-component widget, and npm publishing of
-`scm-engine`/`estimators` as standalone packages. The Validation table below tracks
-what's cross-checked against reference implementations as of today.
+See [REMAINING.md](./REMAINING.md) for the full list of what's not built yet
+(kept current with every push). The Validation table below tracks what's
+cross-checked against reference implementations as of today.
 
 ## How it works
 
