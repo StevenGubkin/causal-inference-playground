@@ -528,13 +528,33 @@ bidirected edges as dashed arcs.
   note); plot the sampling distribution of each applicable estimator's ATE estimate
   as an overlaid histogram, with a bias/RMSE readout against the correct truth
   (population ATE, or the complier LATE specifically for 2SLS). **Shipped**: the
-  bias/RMSE part. **Not shipped**: CI coverage — no estimator in this codebase
-  computes a confidence interval yet (no bootstrap, no analytic SE), so there is no
-  coverage rate to plot. This is the single biggest gap between this section's
-  original vision and what's actually built.
+  bias/RMSE part. **Not shipped**: CI *coverage* — checking whether each replicate's
+  *own* CI actually contains the truth needs a bootstrap nested inside every Monte
+  Carlo replicate (40,000+ estimator calls at default settings), its own perf design
+  the same way bias/RMSE needed one before anything could be layered on top,
+  deliberately deferred as a follow-up to the confidence intervals below (not the
+  same gap as before — single-run CIs are shipped now, only *coverage across
+  repeated samples* remains).
+- **Confidence intervals:** a separate panel (`bootstrapCi.ts`), single-run ATE view
+  only, toggling between three nonparametric bootstrap methods — percentile,
+  basic/pivotal, and BCa. None strictly dominates: percentile is
+  transformation-respecting (equivariant under monotone reparametrization) but
+  doesn't correct a location bias between the bootstrap distribution's center and
+  the real estimate; basic/pivotal (`2·estimate − q(1-α/2)`, `2·estimate − q(α/2)`,
+  derived directly from `estimate − t0 ≈ resample − estimate`) corrects that bias via
+  reflection but assumes shift-symmetry on the current scale; BCa gets both
+  properties via a `z0` (bias) and `a` (acceleration, from a jackknife's skewness)
+  adjustment, at the cost of an `n`-row leave-one-out jackknife pass on top of the
+  bootstrap pass every method needs — roughly doubles-to-triples wall-clock versus
+  percentile/basic alone, still fine chunked and user-triggered. Resamples the
+  *actual observed sample* (`resampleRows`, `estimators/bootstrap.ts`), never a
+  fresh population draw — deliberately different from Monte-Carlo mode's per-
+  replicate `forwardSample`, since a bootstrap CI is specifically "what you could
+  compute from real data alone."
 - **Off-main-thread compute.** Aspirational (see §3): in practice every recompute,
-  including Monte-Carlo mode, runs on the main thread. The live slider described
-  below — and its two-tier bootstrap-CI update strategy — has not been built at all;
+  including Monte-Carlo mode and the confidence-interval panel above, runs on the
+  main thread. The live slider described above — and its two-tier bootstrap-CI
+  update strategy for *that* interaction specifically — has not been built at all;
   the app instead uses plain number inputs/checkboxes with a debounced full
   recompute on every change, which real benchmarking has shown is fast enough
   without a live-drag fast path.

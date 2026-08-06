@@ -226,13 +226,22 @@ outright and front-door recovers the effect.
 ## 5. Uncertainty, honestly
 
 Confidence intervals come from the actual sampling variability — the nonparametric
-bootstrap by default, analytic forms where they are exact — not from the residuals of
-a model assumed to be correct. This is deliberate. It lets the tool demonstrate the
-failure mode that matters most in practice: a **misspecified** estimator can produce a
-**tight** interval that **confidently excludes the truth**. In Monte-Carlo mode the
-tool reports interval **coverage** — the fraction of repeated samples whose CI contains
-the true effect — which is the honest scorecard: a well-behaved 95% interval covers
-about 95% of the time, and a confidently-wrong one covers far less.
+bootstrap by default — not from the residuals of a model assumed to be correct. This
+is deliberate. It lets the tool demonstrate the failure mode that matters most in
+practice: a **misspecified** estimator can produce a **tight** interval that
+**confidently excludes the truth**. The single-run view offers three interval
+flavors — percentile, basic/pivotal, and BCa — since none strictly dominates the
+others (ARCHITECTURE.md §11 has the tradeoffs); on the canonical confounding example,
+naive's interval is tight *and excludes* the true effect of 2.0 under all three,
+exactly the failure mode above, while the adjusted estimators' intervals correctly
+contain it.
+
+Interval **coverage** — running Monte-Carlo mode and checking what fraction of
+repeated samples' CIs actually contain the true effect, the honest scorecard where a
+well-behaved 95% interval covers about 95% of the time and a confidently-wrong one
+covers far less — is a natural next step, not yet built: it needs a bootstrap nested
+inside every Monte Carlo replicate, a separate cost/perf question from the single-run
+CIs above.
 
 ## 6. Scope
 

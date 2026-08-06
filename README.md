@@ -149,8 +149,18 @@ Working today:
   distinction the single-run view already draws). Runs chunked on the main thread
   rather than a worker pool — a real benchmark showed replicates cost ~1–4ms each,
   so batching (with a live progress counter) keeps the UI responsive without the
-  added complexity. CI coverage is deliberately out of scope for now: no estimator
-  in this codebase computes a confidence interval yet.
+  added complexity. CI *coverage* (whether each replicate's own interval actually
+  contains the truth) is deliberately out of scope for now — see the confidence
+  intervals below.
+- **Confidence intervals** — for any ATE estimate, a nonparametric bootstrap on your
+  *actual sample* (not a fresh population draw, unlike Monte Carlo mode — this is
+  what you could compute from real data alone), with a toggle between three interval
+  flavors: percentile, basic/pivotal, and BCa (bias-corrected and accelerated). None
+  strictly dominates the others — percentile is transformation-respecting, basic
+  directly corrects a location bias via reflection, BCa gets both at the cost of an
+  extra jackknife pass. Demonstrates METHODS.md's central point about honest
+  uncertainty directly: naive's interval is tight *and excludes the true effect*,
+  while the adjusted estimators' intervals correctly contain it.
 
 Planned, not yet built (tracked in [ARCHITECTURE.md](./ARCHITECTURE.md)): an
 embeddable `<iframe>`/web-component widget, and npm publishing of
