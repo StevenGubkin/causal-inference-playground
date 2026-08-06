@@ -1,5 +1,6 @@
 import type { Model, NodeId, RNG } from 'scm-dsl';
 import { forwardSample } from 'scm-engine';
+import type { ObservedSample } from 'scm-engine';
 import {
   aipwAte,
   frontdoorDoseResponse,
@@ -11,14 +12,11 @@ import {
   stratifyDoseResponse,
 } from 'estimators';
 
-export interface MonteCarloConfig {
-  model: Model;
+export interface EstimatorConfig {
   treatment: NodeId;
   outcome: NodeId;
   ateA: number;
   ateB: number;
-  sampleSize: number;
-  noiseSD: number;
   adjustment: NodeId[];
   basisMode: 'polynomial' | 'kernelRidge';
   degree: number;
@@ -26,6 +24,12 @@ export interface MonteCarloConfig {
   lambda: number;
   instrument: string; // '' = none
   mediator: string; // '' = none
+}
+
+export interface MonteCarloConfig extends EstimatorConfig {
+  model: Model;
+  sampleSize: number;
+  noiseSD: number;
 }
 
 export interface MonteCarloReplicate {
@@ -47,18 +51,22 @@ function contrast(fn: () => { ys: number[] }): number | null {
   }
 }
 
-/** One replicate: fresh resample at `rng`, every currently-applicable estimator
- * run against it. Mirrors PlaygroundView.tsx's `run` memo gating exactly (empty
- * adjustment set -> gcomp/stratify skip; isBinaryColumn -> ipw/aipw; instrument/
- * mediator presence -> iv/frontdoor) so Monte Carlo's active-estimator set always
- * matches what the single-run view is already showing. Every estimator call is
- * wrapped individually -- a replicate loop of hundreds makes rare data-dependent
- * throws (stratify's cardinality guard above all, but defensively all of them)
- * far more likely to actually occur than in a single run, and one bad replicate
- * must not abort the whole batch. */
-export function runMonteCarloReplicate(config: MonteCarloConfig, rng: RNG): MonteCarloReplicate {
-  const sample = forwardSample(config.model, config.sampleSize, rng, config.noiseSD);
-  const observed = sample.observed();
+/** Every currently-applicable estimator run against `observed` as-is. Mirrors
+ * PlaygroundView.tsx's `run` memo gating exactly (empty adjustment set ->
+ * gcomp/stratify skip; isBinaryColumn -> ipw/aipw; instrument/mediator
+ * presence -> iv/frontdoor) so every caller's active-estimator set always
+ * matches what the single-run view is already showing. Every estimator call
+ * is wrapped individually -- a replicate loop of hundreds (Monte Carlo mode)
+ * or a bootstrap/jackknife pass (bootstrapCi.ts) makes rare data-dependent
+ * throws (stratify's cardinality guard above all, but defensively all of
+ * them) far more likely to actually occur than in a single run, and one bad
+ * replicate must not abort the whole batch.
+ *
+ * Factored out from runMonteCarloReplicate so bootstrap/jackknife replicates
+ * (bootstrapCi.ts) can drive this exact gating with resampled or
+ * leave-one-out data instead of a fresh forwardSample, without duplicating
+ * (and risking drifting out of sync with) the rules above. */
+export function computeEstimateSet(observed: ObservedSample, config: EstimatorConfig): MonteCarloReplicate {
   const points = [config.ateA, config.ateB];
 
   function computeCurve(adjustment: NodeId[]) {
@@ -101,6 +109,14 @@ export function runMonteCarloReplicate(config: MonteCarloConfig, rng: RNG): Mont
     : null;
 
   return { naive, gcomp, stratify, ipw, aipw, iv, frontdoor };
+}
+
+/** One Monte Carlo replicate: fresh resample at `rng`, every currently-
+ * applicable estimator run against it (see computeEstimateSet's doc comment
+ * for the gating rules this reuses). */
+export function runMonteCarloReplicate(config: MonteCarloConfig, rng: RNG): MonteCarloReplicate {
+  const observed = forwardSample(config.model, config.sampleSize, rng, config.noiseSD).observed();
+  return computeEstimateSet(observed, config);
 }
 
 export interface MonteCarloSummary {

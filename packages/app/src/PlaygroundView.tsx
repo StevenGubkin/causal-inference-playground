@@ -13,9 +13,11 @@ import { statementToLatex } from './equationLatex';
 import { downloadFile, modelToPython, modelToSvg, sampleToCsv } from './export/index.js';
 import { clampBandwidth, clampDegree, clampLambda, clampNoiseSD, clampReplicateCount } from './limits.js';
 import { MathField } from './MathField';
+import { computeCI, runBootstrapReplicate, runJackknifeReplicate } from './bootstrapCi.js';
+import type { BootstrapCIResult, CIMethod } from './bootstrapCi.js';
 import { MonteCarloChart } from './MonteCarloChart.js';
-import { runMonteCarloReplicate, summarizeReplicates } from './monteCarlo.js';
-import type { MonteCarloConfig, MonteCarloReplicate } from './monteCarlo.js';
+import { computeEstimateSet, runMonteCarloReplicate, summarizeReplicates } from './monteCarlo.js';
+import type { EstimatorConfig, MonteCarloConfig, MonteCarloReplicate } from './monteCarlo.js';
 
 const SAMPLE_SIZE = 500;
 const ORACLE_REPLICATES = 3000;
@@ -104,6 +106,13 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
   // adjustment changed out from under it -- a multi-tick loop, not a single
   // effect cleanup-cancelable call, so this can't rely on useEffect cleanup.
   const mcGeneration = useRef(0);
+  const [ciMethod, setCiMethod] = useState<CIMethod>('percentile');
+  const [ciReplicateCount, setCiReplicateCount] = useState(200);
+  const [ciResults, setCiResults] = useState<Record<string, BootstrapCIResult> | null>(null);
+  const [ciRunning, setCiRunning] = useState(false);
+  const [ciProgress, setCiProgress] = useState(0); // combined bootstrap+jackknife progress
+  const [ciTotal, setCiTotal] = useState(0);
+  const ciGeneration = useRef(0);
 
   const debouncedSource = useDebouncedValue(source, SOURCE_DEBOUNCE_MS);
   const parsed = useMemo(() => parseModel(debouncedSource), [debouncedSource]);
@@ -272,6 +281,86 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     step(0);
   }
 
+  // Nonparametric bootstrap CIs on the *actual observed sample* (contrast
+  // with Monte Carlo mode's fresh forwardSample per replicate above) -- see
+  // the bootstrap CI plan for why percentile/basic/BCa all stay on the
+  // table (none strictly dominates) and why BCa specifically needs a second,
+  // more expensive phase: a full n-row jackknife pass for its acceleration
+  // term, on top of the bootstrap pass every method needs.
+  function computeConfidenceIntervals() {
+    if (!run || !run.ate) return;
+    const generation = ++ciGeneration.current;
+    const config: EstimatorConfig = {
+      treatment: effectiveTreatment,
+      outcome: effectiveOutcome,
+      ateA,
+      ateB,
+      adjustment: run.adjustment,
+      basisMode,
+      degree,
+      bandwidth,
+      lambda,
+      instrument: effectiveInstrument,
+      mediator: effectiveMediator,
+    };
+    const observed = run.observed;
+    const pointEstimate = computeEstimateSet(observed, config);
+    const B = ciReplicateCount;
+    const needsJackknife = ciMethod === 'bca';
+    const total = B + (needsJackknife ? observed.n : 0);
+    const baseRng = createRNG(seed).fork('bootstrap-ci');
+    const BATCH_SIZE = 25;
+    const bootstrapAcc: MonteCarloReplicate[] = [];
+    const jackknifeAcc: MonteCarloReplicate[] = [];
+    setCiRunning(true);
+    setCiProgress(0);
+    setCiTotal(total);
+    setCiResults(null);
+
+    function finalize() {
+      const results: Record<string, BootstrapCIResult> = {};
+      (['naive', 'gcomp', 'stratify', 'ipw', 'aipw', 'iv', 'frontdoor'] as const).forEach((key) => {
+        if (pointEstimate[key] === null) return; // not active for this config
+        const values = bootstrapAcc.map((r) => r[key]).filter((v): v is number => v !== null);
+        const failures = bootstrapAcc.length - values.length;
+        const jackknife = needsJackknife ? jackknifeAcc.map((r) => r[key]).filter((v): v is number => v !== null) : null;
+        results[key] = computeCI(ciMethod, pointEstimate[key]!, values, failures, jackknife);
+      });
+      setCiResults(results);
+    }
+
+    function bootstrapStep(i: number) {
+      if (generation !== ciGeneration.current) return;
+      const end = Math.min(i + BATCH_SIZE, B);
+      for (let r = i; r < end; r++) {
+        bootstrapAcc.push(runBootstrapReplicate(observed, config, baseRng.fork(`bootstrap-rep-${r}`)));
+      }
+      setCiProgress(end);
+      // Live-updates with percentile/basic already available; a BCa run
+      // shows a percentile-equivalent interval here (computeCI degrades to
+      // percentile when the jackknife array is still empty), then sharpens
+      // into the true BCa interval once the jackknife phase below finishes.
+      finalize();
+      if (end < B) setTimeout(() => bootstrapStep(end), 0);
+      else if (needsJackknife) jackknifeStep(0);
+      else setCiRunning(false);
+    }
+
+    function jackknifeStep(i: number) {
+      if (generation !== ciGeneration.current) return;
+      const end = Math.min(i + BATCH_SIZE, observed.n);
+      for (let r = i; r < end; r++) {
+        jackknifeAcc.push(runJackknifeReplicate(observed, r, config));
+      }
+      setCiProgress(B + end);
+      finalize();
+      if (end < observed.n) setTimeout(() => jackknifeStep(end), 0);
+      else setCiRunning(false);
+    }
+
+    bootstrapStep(0);
+  }
+
   const run = useMemo(() => {
     if (!parsed.ok || !effectiveTreatment || !effectiveOutcome || effectiveTreatment === effectiveOutcome) return null;
     const model = parsed.model;
@@ -435,6 +524,10 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     setMcReplicates([]);
     setMcRunning(false);
     setMcProgress(0);
+    ciGeneration.current += 1;
+    setCiResults(null);
+    setCiRunning(false);
+    setCiProgress(0);
   }, [run]);
 
   const mcSeries = run?.ate
@@ -860,6 +953,67 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                     ]}
                   />
                 </>
+              )}
+            </div>
+          )}
+
+          {estimand === 'ate' && run.ate && (
+            <div style={{ margin: '0 0 16px', padding: 12, border: '1px solid #cbd5e1', borderRadius: 8 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
+                <strong style={{ color: '#334155' }}>Confidence intervals</strong>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input type="radio" name="ciMethod" checked={ciMethod === 'percentile'} onChange={() => setCiMethod('percentile')} />
+                  <span style={{ color: '#475569' }}>percentile</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input type="radio" name="ciMethod" checked={ciMethod === 'basic'} onChange={() => setCiMethod('basic')} />
+                  <span style={{ color: '#475569' }}>basic</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input type="radio" name="ciMethod" checked={ciMethod === 'bca'} onChange={() => setCiMethod('bca')} />
+                  <span style={{ color: '#475569' }}>BCa</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ color: '#475569' }}>resamples</span>
+                  <input
+                    type="number"
+                    value={ciReplicateCount}
+                    min={10}
+                    max={1000}
+                    step={10}
+                    style={{ width: 72 }}
+                    onChange={(e) => setCiReplicateCount(clampReplicateCount(e.target.valueAsNumber))}
+                  />
+                </label>
+                <button type="button" onClick={computeConfidenceIntervals} disabled={ciRunning}>
+                  {ciRunning ? `Computing... (${ciProgress}/${ciTotal})` : 'Compute CIs'}
+                </button>
+              </div>
+              <p style={{ margin: '0 0 8px', fontSize: 12.5, color: '#64748b' }}>
+                Nonparametric bootstrap on your actual {SAMPLE_SIZE}-row sample -- this is what you could compute from real data alone, unlike
+                the &quot;true&quot; reference lines above.
+                {ciMethod === 'bca' && ' BCa additionally jackknifes the full sample (one refit per row), so it takes longer.'}
+              </p>
+              {ciResults && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }}>
+                  {Object.entries(ciResults).map(([key, ci]) => (
+                    <div key={key}>
+                      {key}: {ci.estimate.toFixed(3)}{' '}
+                      {ci.lower !== null && ci.upper !== null ? (
+                        <>
+                          95% CI [{ci.lower.toFixed(3)}, {ci.upper.toFixed(3)}]
+                        </>
+                      ) : (
+                        <span style={{ color: '#b45309' }}>
+                          insufficient successful resamples ({ci.replicates}/{ci.replicates + ci.failures})
+                        </span>
+                      )}
+                      {ci.failures > 0 && ci.lower !== null && (
+                        <span style={{ color: '#64748b' }}> ({ci.failures} resample{ci.failures === 1 ? '' : 's'} failed)</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}

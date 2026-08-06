@@ -20,3 +20,5 @@ export { ipwAte, fitPropensity, overlapDiagnostics } from './ipw.js';
 export type { IpwResult, PropensityFit, OverlapDiagnostics } from './ipw.js';
 export { aipwAte } from './aipw.js';
 export type { AipwResult } from './aipw.js';
+export { standardNormalCDF, standardNormalQuantile } from './normal.js';
+export { leaveOneOut, resampleRows } from './bootstrap.js';
