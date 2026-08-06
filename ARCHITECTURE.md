@@ -127,6 +127,15 @@ UI thread free for the live-slider interaction (§11) and lets Monte-Carlo mode
 (§11) parallelize independent replicates across workers trivially, since each
 replicate needs only its own seed.
 
+> **As actually built:** no worker pool exists — every recompute, including Monte
+> Carlo mode, runs synchronously on the main thread. A real benchmark (timing
+> `forwardSample` + every estimator against the built packages) showed replicate
+> cost tops out around 4ms even with all five backdoor-family estimators active, so
+> Monte Carlo mode just chunks its replicate loop into `setTimeout`-batched groups
+> of 25 with a live progress counter — enough to keep the UI responsive without the
+> `postMessage`/structured-clone complexity a worker pool would add. Revisit this
+> if a future feature's per-recompute cost turns out to need genuine parallelism.
+
 ---
 
 ## 4. The DSL
@@ -498,7 +507,12 @@ bidirected edges as dashed arcs.
 - **Model entry:** a MathLive `<math-field>` per equation (real math notation), plus
   a plain code-editor view for the whole model. Offer both; keep them in sync.
 - **DAG:** React Flow — draggable nodes, arrowed edges, auto-layout via dagre/elkjs.
-  Selecting an adjustment set highlights nodes and the paths it blocks/opens.
+  Selecting an adjustment set highlights nodes and the paths it blocks/opens. Every
+  edge into the current treatment node is drawn red/dashed — exactly (and only) the
+  edges `do(X=x)` cuts, since mutilation is always a strict subgraph of the original
+  DAG (confirmed against `oracle.ts`: the treatment's own structural equation is
+  simply never evaluated; nothing more elaborate ever happens, including for a
+  `<->`-desugared latent's edge into the treatment).
 - **Comparison chart:** Plotly — true `do(X)` curve, naive `E[Y|X]`, the chosen
   estimator's curve, and a shaded band for the bias (gap between naive and truth).
   The estimand selector drives which oracle call is the reference.
@@ -509,15 +523,21 @@ bidirected edges as dashed arcs.
   gallery model — confounding strength, selection rate, effect heterogeneity — where
   the estimated effect visibly flips sign or the CI stops covering the truth as you
   drag. Wire at least Simpson reversal and M-bias to this.
-- **Monte-Carlo mode:** run the pipeline `N` times; plot the sampling distribution of
-  the estimate — bias, RMSE, CI coverage — turning one number into a simulation study.
-- **Off-main-thread compute.** Every recompute — a slider drag, a Monte-Carlo run —
-  goes through the worker pool (§3), never the main thread. The live slider uses a
-  two-tier update: an immediate cheap recompute (point estimate only, no bootstrap)
-  for visual feedback while dragging, and a debounced (~150–250ms after the drag
-  settles) full recompute with bootstrap CIs. Without this, the signature
-  interaction — the feature the whole distribution strategy leans on — stutters
-  under its own bootstrap cost.
+- **Monte-Carlo mode:** run the pipeline `N` times (10–1000, chunked into batches of
+  25 via `setTimeout` so the UI stays responsive — see §3's "as actually built"
+  note); plot the sampling distribution of each applicable estimator's ATE estimate
+  as an overlaid histogram, with a bias/RMSE readout against the correct truth
+  (population ATE, or the complier LATE specifically for 2SLS). **Shipped**: the
+  bias/RMSE part. **Not shipped**: CI coverage — no estimator in this codebase
+  computes a confidence interval yet (no bootstrap, no analytic SE), so there is no
+  coverage rate to plot. This is the single biggest gap between this section's
+  original vision and what's actually built.
+- **Off-main-thread compute.** Aspirational (see §3): in practice every recompute,
+  including Monte-Carlo mode, runs on the main thread. The live slider described
+  below — and its two-tier bootstrap-CI update strategy — has not been built at all;
+  the app instead uses plain number inputs/checkboxes with a debounced full
+  recompute on every change, which real benchmarking has shown is fast enough
+  without a live-drag fast path.
 
 The UI never computes ground truth; it calls the `Oracle`. It never lets an
 estimator call the `Oracle`.

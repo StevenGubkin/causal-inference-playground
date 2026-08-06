@@ -119,7 +119,10 @@ Working today:
   per-equation independent noise, latent variables, and bidirected edges (`<->`) for
   unobserved confounding.
 - **A correct interventional oracle** — `do(X=x)` by graph mutilation, with common
-  random numbers for smooth ground-truth curves.
+  random numbers for smooth ground-truth curves. The DAG view marks exactly the
+  edges `do(X=x)` cuts (in red, dashed) — always a strict subgraph of the original
+  DAG, never anything more elaborate, since mutilation only ever means "don't
+  evaluate the treatment's own equation."
 - **Estimators**: naive (unadjusted), g-computation (polynomial or kernel-ridge/RBF
   basis, so it recovers nonlinear dose-response), stratification (for a discrete,
   low-cardinality adjustment set), IPW and doubly-robust AIPW (for a binary treatment,
@@ -138,12 +141,21 @@ Working today:
 - **Export**: model as `.scm`, sample as CSV, DAG as SVG, and generated runnable
   Python (statsmodels, plus real scikit-learn `KernelRidge`/`Logit` where the active
   view uses kernel-ridge g-comp or IPW/AIPW) reproducing the analysis on screen.
+- **Monte Carlo mode** — for any ATE estimate, re-run the whole pipeline (fresh
+  sample, every applicable estimator) up to 1000 times and see the *sampling
+  distribution*, not just one point: a bias/RMSE readout and an overlaid histogram
+  per estimator, each compared against the right truth (population ATE for
+  naive/g-comp/stratify/IPW/AIPW/front-door, the complier LATE for 2SLS — the same
+  distinction the single-run view already draws). Runs chunked on the main thread
+  rather than a worker pool — a real benchmark showed replicates cost ~1–4ms each,
+  so batching (with a live progress counter) keeps the UI responsive without the
+  added complexity. CI coverage is deliberately out of scope for now: no estimator
+  in this codebase computes a confidence interval yet.
 
-Planned, not yet built (tracked in [ARCHITECTURE.md](./ARCHITECTURE.md)): Monte-Carlo
-mode (repeated-sampling bias/RMSE/CI coverage); an embeddable `<iframe>`/web-component
-widget; and npm publishing of `scm-engine`/`estimators` as standalone packages. The
-Validation table below tracks what's cross-checked against reference implementations
-as of today.
+Planned, not yet built (tracked in [ARCHITECTURE.md](./ARCHITECTURE.md)): an
+embeddable `<iframe>`/web-component widget, and npm publishing of
+`scm-engine`/`estimators` as standalone packages. The Validation table below tracks
+what's cross-checked against reference implementations as of today.
 
 ## How it works
 
