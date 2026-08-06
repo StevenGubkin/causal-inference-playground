@@ -12,6 +12,9 @@ export const ROLE_COLORS = {
   other: '#475569',
 };
 
+const CUT_EDGE_COLOR = '#ef4444';
+const EDGE_COLOR = '#64748b';
+
 interface DagViewProps {
   model: Model;
   treatment: string;
@@ -67,14 +70,26 @@ export function DagView({ model, treatment, outcome, adjustmentSet }: DagViewPro
     setNodes((current) => applyNodeChanges(changes, current));
   }, []);
 
+  // do(treatment=x) fixes the treatment node directly and never evaluates its
+  // own structural equation (packages/scm-engine/src/oracle.ts, mutilatedScope),
+  // so every edge into the treatment node is cut -- and that's the *only*
+  // structural change intervention ever makes (same nodes, all other edges
+  // untouched). Mark those edges instead of computing a separate graph.
+  const treatmentNode = model.nodes.get(treatment);
+  const hasCutEdges = (treatmentNode?.parents.length ?? 0) > 0;
+
   const edges: Edge[] = [...model.nodes.values()].flatMap((node) =>
-    node.parents.map((parentId) => ({
-      id: `${parentId}->${node.id}`,
-      source: parentId,
-      target: node.id,
-      style: { stroke: '#64748b' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#64748b' },
-    })),
+    node.parents.map((parentId) => {
+      const isCut = node.id === treatment;
+      const color = isCut ? CUT_EDGE_COLOR : EDGE_COLOR;
+      return {
+        id: `${parentId}->${node.id}`,
+        source: parentId,
+        target: node.id,
+        style: { stroke: color, ...(isCut ? { strokeDasharray: '6 4' } : {}) },
+        markerEnd: { type: MarkerType.ArrowClosed, color },
+      };
+    }),
   );
 
   return (
@@ -91,15 +106,32 @@ export function DagView({ model, treatment, outcome, adjustmentSet }: DagViewPro
         <Legend color={ROLE_COLORS.adjusted} label="adjusted for" />
         <Legend color={ROLE_COLORS.latent} label="latent" />
         <Legend color={ROLE_COLORS.other} label="other" />
+        {hasCutEdges && <Legend color={CUT_EDGE_COLOR} label={`cut by do(${treatment})`} dashed />}
       </div>
+      {hasCutEdges && (
+        <p style={{ fontSize: 11.5, color: '#475569', margin: '4px 2px 0' }}>
+          Red dashed edges are cut when computing the true effect: <code>do({treatment}=x)</code> fixes the
+          treatment directly and never evaluates its own equation, which is why the true curve differs from
+          just conditioning on {treatment}.
+        </p>
+      )}
     </div>
   );
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+function Legend({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
   return (
     <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-      <span style={{ display: 'inline-block', width: 18, height: 3, borderRadius: 2, background: color }} />
+      <span
+        style={{
+          display: 'inline-block',
+          width: 18,
+          height: 3,
+          borderRadius: 2,
+          background: dashed ? 'transparent' : color,
+          ...(dashed ? { borderTop: `2px dashed ${color}` } : {}),
+        }}
+      />
       {label}
     </span>
   );
