@@ -26,3 +26,8 @@ export function clampNoiseSD(n: number): number {
   if (!Number.isFinite(n)) return 1;
   return Math.min(5, Math.max(0, n));
 }
+
+export function clampReplicateCount(n: number): number {
+  if (!Number.isFinite(n)) return 200;
+  return Math.min(1000, Math.max(10, Math.round(n)));
+}

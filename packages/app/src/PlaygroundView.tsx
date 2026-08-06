@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { createRNG, doContrast, doResponse, forwardSample, lateContrast } from 'scm-engine';
 import type { Curve } from 'scm-engine';
@@ -11,8 +11,11 @@ import { ComparisonChart } from './ComparisonChart';
 import { DagView } from './DagView';
 import { statementToLatex } from './equationLatex';
 import { downloadFile, modelToPython, modelToSvg, sampleToCsv } from './export/index.js';
-import { clampBandwidth, clampDegree, clampLambda, clampNoiseSD } from './limits.js';
+import { clampBandwidth, clampDegree, clampLambda, clampNoiseSD, clampReplicateCount } from './limits.js';
 import { MathField } from './MathField';
+import { MonteCarloChart } from './MonteCarloChart.js';
+import { runMonteCarloReplicate, summarizeReplicates } from './monteCarlo.js';
+import type { MonteCarloConfig, MonteCarloReplicate } from './monteCarlo.js';
 
 const SAMPLE_SIZE = 500;
 const ORACLE_REPLICATES = 3000;
@@ -92,6 +95,15 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
   const [lambda, setLambda] = useState(clampLambda(decoded?.query.lambda ?? 0.1));
   const [noiseSD, setNoiseSD] = useState(clampNoiseSD(decoded?.query.noiseSD ?? 1));
   const [permalinkCopied, setPermalinkCopied] = useState(false);
+  const [mcReplicateCount, setMcReplicateCount] = useState(200);
+  const [mcReplicates, setMcReplicates] = useState<MonteCarloReplicate[]>([]);
+  const [mcRunning, setMcRunning] = useState(false);
+  const [mcProgress, setMcProgress] = useState(0);
+  // Guards a stale in-flight setTimeout-batched run from writing into state
+  // after a newer run started, or after the underlying model/treatment/
+  // adjustment changed out from under it -- a multi-tick loop, not a single
+  // effect cleanup-cancelable call, so this can't rely on useEffect cleanup.
+  const mcGeneration = useRef(0);
 
   const debouncedSource = useDebouncedValue(source, SOURCE_DEBOUNCE_MS);
   const parsed = useMemo(() => parseModel(debouncedSource), [debouncedSource]);
@@ -210,6 +222,54 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       setPermalinkCopied(true);
       setTimeout(() => setPermalinkCopied(false), 1500);
     });
+  }
+
+  // Runs mcReplicateCount replicates in batches of BATCH_SIZE via
+  // setTimeout(fn, 0), so React can repaint a progress counter between
+  // batches instead of blocking the main thread for the whole run (see the
+  // Monte Carlo mode plan for the benchmark that justified chunking over a
+  // Web Worker). Each replicate forks its own RNG stream off the same base
+  // seed, the same rng.fork(streamId) convention doResponse/lateContrast
+  // already use internally, rather than inventing seed arithmetic.
+  function runMonteCarlo() {
+    if (!run || !run.ate) return;
+    const generation = ++mcGeneration.current;
+    const config: MonteCarloConfig = {
+      model: run.model,
+      treatment: effectiveTreatment,
+      outcome: effectiveOutcome,
+      ateA,
+      ateB,
+      sampleSize: SAMPLE_SIZE,
+      noiseSD,
+      adjustment: run.adjustment,
+      basisMode,
+      degree,
+      bandwidth,
+      lambda,
+      instrument: effectiveInstrument,
+      mediator: effectiveMediator,
+    };
+    const total = mcReplicateCount;
+    const baseRng = createRNG(seed).fork('monte-carlo');
+    const BATCH_SIZE = 25;
+    const acc: MonteCarloReplicate[] = [];
+    setMcRunning(true);
+    setMcProgress(0);
+    setMcReplicates([]);
+
+    function step(i: number) {
+      if (generation !== mcGeneration.current) return; // superseded by a newer run or config change
+      const end = Math.min(i + BATCH_SIZE, total);
+      for (let r = i; r < end; r++) {
+        acc.push(runMonteCarloReplicate(config, baseRng.fork(`mc-rep-${r}`)));
+      }
+      setMcReplicates([...acc]);
+      setMcProgress(end);
+      if (end < total) setTimeout(() => step(end), 0);
+      else setMcRunning(false);
+    }
+    step(0);
   }
 
   const run = useMemo(() => {
@@ -365,6 +425,41 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
       stratifyError,
     };
   }, [parsed, effectiveTreatment, effectiveOutcome, seed, adjustmentSet, availableCovariates, estimand, ateA, ateB, degree, basisMode, bandwidth, lambda, noiseSD, effectiveInstrument, effectiveMediator]);
+
+  // A run's mcReplicates were computed against a specific frozen
+  // MonteCarloConfig snapshot; if the underlying model/treatment/adjustment/
+  // etc. changes underneath it, the histogram would otherwise keep showing
+  // results for a config no longer on screen.
+  useEffect(() => {
+    mcGeneration.current += 1;
+    setMcReplicates([]);
+    setMcRunning(false);
+    setMcProgress(0);
+  }, [run]);
+
+  const mcSeries = run?.ate
+    ? [
+        { key: 'naive', label: 'naive', color: '#ef4444', summary: summarizeReplicates(mcReplicates.map((r) => r.naive), run.ate.true) },
+        run.adjustment.length > 0
+          ? { key: 'gcomp', label: 'g-comp', color: '#2563eb', summary: summarizeReplicates(mcReplicates.map((r) => r.gcomp), run.ate.true) }
+          : null,
+        run.stratifyResult || run.stratifyError
+          ? { key: 'stratify', label: 'stratify', color: '#0d9488', summary: summarizeReplicates(mcReplicates.map((r) => r.stratify), run.ate.true) }
+          : null,
+        run.isBinaryTreatment
+          ? { key: 'ipw', label: 'IPW', color: '#d97706', summary: summarizeReplicates(mcReplicates.map((r) => r.ipw), run.ate.true) }
+          : null,
+        run.isBinaryTreatment
+          ? { key: 'aipw', label: 'AIPW', color: '#4338ca', summary: summarizeReplicates(mcReplicates.map((r) => r.aipw), run.ate.true) }
+          : null,
+        effectiveInstrument && run.trueLate && Number.isFinite(run.trueLate.estimate)
+          ? { key: 'iv', label: '2SLS', color: '#7c3aed', summary: summarizeReplicates(mcReplicates.map((r) => r.iv), run.trueLate.estimate) }
+          : null,
+        effectiveMediator
+          ? { key: 'frontdoor', label: 'front-door', color: '#db2777', summary: summarizeReplicates(mcReplicates.map((r) => r.frontdoor), run.ate.true) }
+          : null,
+      ].filter((s): s is NonNullable<typeof s> => s !== null)
+    : [];
 
   return (
     <div>
@@ -723,6 +818,49 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                 min overlap: {run.aipwResult.minOverlap.toFixed(3)}, effective N: {run.aipwResult.effectiveSampleSizeTreated.toFixed(0)} /{' '}
                 {run.aipwResult.effectiveSampleSizeControl.toFixed(0)}
               </div>
+            </div>
+          )}
+
+          {estimand === 'ate' && run.ate && (
+            <div style={{ margin: '0 0 16px', padding: 12, border: '1px solid #cbd5e1', borderRadius: 8 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+                <strong style={{ color: '#334155' }}>Monte Carlo mode</strong>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ color: '#475569' }}>replicates</span>
+                  <input
+                    type="number"
+                    value={mcReplicateCount}
+                    min={10}
+                    max={1000}
+                    step={10}
+                    style={{ width: 72 }}
+                    onChange={(e) => setMcReplicateCount(clampReplicateCount(e.target.valueAsNumber))}
+                  />
+                </label>
+                <button type="button" onClick={runMonteCarlo} disabled={mcRunning}>
+                  {mcRunning ? `Running... (${mcProgress}/${mcReplicateCount})` : 'Run Monte Carlo'}
+                </button>
+              </div>
+
+              {mcReplicates.length > 0 && (
+                <>
+                  <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontFamily: 'ui-monospace, monospace', fontSize: 12.5, marginBottom: 8 }}>
+                    {mcSeries.map((s) => (
+                      <div key={s.key} style={{ color: s.color }}>
+                        {s.label}: bias {s.summary.bias.toFixed(3)}, RMSE {s.summary.rmse.toFixed(3)}
+                        {s.summary.failures > 0 && ` (${s.summary.failures}/${mcReplicates.length} failed)`}
+                      </div>
+                    ))}
+                  </div>
+                  <MonteCarloChart
+                    series={mcSeries.map((s) => ({ key: s.key, label: s.label, color: s.color, values: s.summary.values }))}
+                    referenceLines={[
+                      { value: run.ate.true, label: 'true ATE', color: '#16a34a' },
+                      ...(mcSeries.some((s) => s.key === 'iv') ? [{ value: run.trueLate!.estimate, label: 'true LATE', color: '#7c3aed' }] : []),
+                    ]}
+                  />
+                </>
+              )}
             </div>
           )}
 
