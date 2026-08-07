@@ -16,8 +16,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fitMultivariateOLS, frontdoorDoseResponse, gcompDoseResponse, iv2sls } from 'estimators';
-import { backdoorValid, findBackdoorSet, frontdoorValid } from 'graph';
+import { aipwAte, fitMultivariateOLS, frontdoorDoseResponse, gcompDoseResponse, ipwAte, iv2sls } from 'estimators';
+import { backdoorValid, dSeparated, findBackdoorSet, frontdoorValid, testableImplications } from 'graph';
 import { parseModel } from 'scm-dsl';
 import type { Model } from 'scm-dsl';
 import { createRNG, forwardSample } from 'scm-engine';
@@ -139,6 +139,55 @@ function validateFrontdoor(): void {
   checkBool('frontdoorValid({M})', frontdoorValid(parsed.model, 'X', 'Y', new Set(['M'])).ok, true);
 }
 
+interface GcompNonlinearFixture {
+  degree: number;
+  grid: number[];
+  gcomp_curve: number[];
+  true_curve: number[];
+}
+
+function validateGcompNonlinear(): void {
+  console.log('\n--- g-computation dose-response, flexible basis (nonlinear.scm) vs. statsmodels ---');
+  const fixture = loadFixture<GcompNonlinearFixture>('gcomp-nonlinear.json');
+
+  const parsed = parseModel(loadModelSource('nonlinear.scm'));
+  if (!parsed.ok) throw new Error(`nonlinear.scm failed to parse: ${JSON.stringify(parsed.errors)}`);
+
+  const sample = forwardSample(parsed.model, N, createRNG(4));
+  const observed = sample.observed();
+
+  const curve = gcompDoseResponse(observed, 'X', 'Y', ['C'], fixture.grid, fixture.degree);
+
+  fixture.grid.forEach((x, i) => {
+    check(`gcomp{C} deg=${fixture.degree} at x=${x} vs. statsmodels`, curve.ys[i]!, fixture.gcomp_curve[i]!);
+  });
+  fixture.grid.forEach((x, i) => {
+    check(`gcomp{C} deg=${fixture.degree} at x=${x} vs. closed-form cos(x)`, curve.ys[i]!, fixture.true_curve[i]!);
+  });
+}
+
+interface IpwAipwFixture {
+  dowhy_ipw_estimate: number;
+  econml_aipw_estimate: number;
+}
+
+function validateIpwAipw(): void {
+  console.log('\n--- IPW / AIPW ATE (ipw-confounding.scm) vs. DoWhy/EconML ---');
+  const fixture = loadFixture<IpwAipwFixture>('ipw-aipw-confounding.json');
+
+  const parsed = parseModel(loadModelSource('ipw-confounding.scm'));
+  if (!parsed.ok) throw new Error(`ipw-confounding.scm failed to parse: ${JSON.stringify(parsed.errors)}`);
+
+  const sample = forwardSample(parsed.model, N, createRNG(5));
+  const observed = sample.observed();
+
+  const ipw = ipwAte(observed, 'X', 'Y', ['Z'], [0, 1]);
+  const aipw = aipwAte(observed, 'X', 'Y', ['Z'], [0, 1]);
+
+  check('ipwAte vs. DoWhy backdoor.propensity_score_weighting', ipw.estimate, fixture.dowhy_ipw_estimate);
+  check('aipwAte vs. EconML LinearDRLearner', aipw.estimate, fixture.econml_aipw_estimate);
+}
+
 interface DsepFixture {
   cases: {
     model: string;
@@ -176,12 +225,48 @@ function validateDsep(): void {
   }
 }
 
+interface TestableImplicationsFixture {
+  models: {
+    model: string;
+    pairs: { x: string; y: string; separator: string[] | null }[];
+  }[];
+}
+
+// Not exact-set equality: find_minimal_d_separator (Python) and our own
+// brute-force smallest-first search (TS) can legitimately pick *different*
+// minimal separators of the same size when several exist -- no algorithmic
+// guarantee of tie-breaking parity across languages/implementations. Cross-
+// validate the conclusion instead: does TS agree a separator exists at all
+// (existence agreement), and does TS's own dSeparated consider Python's
+// chosen separator valid (the actual cross-library check, robust to either
+// side finding a different same-size minimal set).
+function validateTestableImplications(): void {
+  console.log('\n--- testable implications (minimal d-separating sets) vs. networkx ---');
+  const fixture = loadFixture<TestableImplicationsFixture>('testable-implications.json');
+
+  for (const m of fixture.models) {
+    const model = loadDsepModel(m.model);
+    const tsStatements = testableImplications(model);
+    const tsHasPair = (x: string, y: string) => tsStatements.some((s) => (s.x === x && s.y === y) || (s.x === y && s.y === x));
+
+    for (const { x, y, separator } of m.pairs) {
+      checkBool(`${m.model}: testableImplications finds a separator for (${x}, ${y}) iff networkx does`, tsHasPair(x, y), separator !== null);
+      if (separator !== null) {
+        checkBool(`${m.model}: TS dSeparated(${x}, ${y} | {${separator.join(', ')}}) agrees with networkx's separator`, dSeparated(model, x, y, new Set(separator)), true);
+      }
+    }
+  }
+}
+
 console.log(`Validating against fixtures in ${FIXTURES_DIR} (n=${N})`);
 validateBackdoor();
 validateNaive();
 validateIv();
 validateFrontdoor();
+validateGcompNonlinear();
+validateIpwAipw();
 validateDsep();
+validateTestableImplications();
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 if (failures > 0) process.exit(1);

@@ -1,0 +1,126 @@
+{
+  "problem": "testable implications (minimal d-separating sets among observed non-adjacent pairs)",
+  "dgp": "purely structural (graph topology only, no sampling)",
+  "models": [
+    {
+      "model": "confounding.scm",
+      "edges": [
+        [
+          "C",
+          "X"
+        ],
+        [
+          "X",
+          "Y"
+        ],
+        [
+          "C",
+          "Y"
+        ]
+      ],
+      "observed": [
+        "C",
+        "X",
+        "Y"
+      ],
+      "pairs": []
+    },
+    {
+      "model": "collider.scm",
+      "edges": [
+        [
+          "X",
+          "S"
+        ],
+        [
+          "Y",
+          "S"
+        ]
+      ],
+      "observed": [
+        "X",
+        "Y",
+        "S"
+      ],
+      "pairs": [
+        {
+          "x": "X",
+          "y": "Y",
+          "separator": []
+        }
+      ]
+    },
+    {
+      "model": "mediator.scm",
+      "edges": [
+        [
+          "X",
+          "M"
+        ],
+        [
+          "M",
+          "Y"
+        ]
+      ],
+      "observed": [
+        "X",
+        "M",
+        "Y"
+      ],
+      "pairs": [
+        {
+          "x": "X",
+          "y": "Y",
+          "separator": [
+            "M"
+          ]
+        }
+      ]
+    },
+    {
+      "model": "m-bias (inline, packages/graph/src/backdoor.test.ts)",
+      "edges": [
+        [
+          "U1",
+          "X"
+        ],
+        [
+          "X",
+          "Y"
+        ],
+        [
+          "U1",
+          "M"
+        ],
+        [
+          "U2",
+          "Y"
+        ],
+        [
+          "U2",
+          "M"
+        ]
+      ],
+      "observed": [
+        "X",
+        "Y",
+        "M"
+      ],
+      "pairs": [
+        {
+          "x": "M",
+          "y": "X",
+          "separator": null
+        },
+        {
+          "x": "M",
+          "y": "Y",
+          "separator": null
+        }
+      ]
+    }
+  ],
+  "references": {
+    "networkx": "3.4.2"
+  }
+}

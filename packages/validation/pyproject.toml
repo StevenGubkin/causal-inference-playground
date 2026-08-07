@@ -10,6 +10,7 @@ dependencies = [
   "statsmodels>=0.14",
   "linearmodels>=6.0",
   "networkx>=3.3",
+  "econml>=0.17.0",
 ]
 
 [tool.uv]

@@ -1,0 +1,17 @@
+{
+  "problem": "IPW / AIPW ATE (ipw-confounding.scm)",
+  "dgp": "Z ~ Normal(0,1); X ~ Bernoulli(logistic(0.5*Z)); Y = 2*X + 3*Z + eps",
+  "n": 20000,
+  "seed": 20260803,
+  "true_effect": 2.0,
+  "dowhy_ipw_estimate": 2.014211785755336,
+  "dowhy_ci": [
+    1.907706531588786,
+    2.0999304483950945
+  ],
+  "econml_aipw_estimate": 2.016175157436343,
+  "references": {
+    "dowhy": "0.14",
+    "econml": "0.17.0"
+  }
+}

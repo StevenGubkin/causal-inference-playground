@@ -1,6 +1,7 @@
 // ARCHITECTURE.md §9 — the backdoor criterion (Pearl).
 import type { Model, NodeId } from 'scm-dsl';
 import { dSeparatedOverParents, descendants, modelParentsFn, withOutgoingEdgesRemoved } from './dsep.js';
+import { subsetsSmallestFirst } from './subsets.js';
 
 export interface ValidityResult {
   ok: boolean;
@@ -36,16 +37,6 @@ export function backdoorValid(model: Model, x: NodeId, y: NodeId, z: ReadonlySet
   return { ok: true };
 }
 
-function popcount(n: number): number {
-  let count = 0;
-  let value = n;
-  while (value > 0) {
-    count += value & 1;
-    value >>= 1;
-  }
-  return count;
-}
-
 /**
  * Brute-force search over subsets of observed non-descendants of `x` (other
  * than `x`/`y` themselves) for one satisfying `backdoorValid`, smallest
@@ -57,10 +48,7 @@ export function findBackdoorSet(model: Model, x: NodeId, y: NodeId): NodeId[] | 
   const candidates = model.observed().filter((id) => id !== x && id !== y && !xDescendants.has(id));
   if (candidates.length > 20) return null;
 
-  const n = candidates.length;
-  const masks = Array.from({ length: 1 << n }, (_, m) => m).sort((a, b) => popcount(a) - popcount(b));
-  for (const mask of masks) {
-    const subset = candidates.filter((_, i) => (mask & (1 << i)) !== 0);
+  for (const subset of subsetsSmallestFirst(candidates)) {
     if (backdoorValid(model, x, y, new Set(subset)).ok) return subset;
   }
   return null;
