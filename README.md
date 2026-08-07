@@ -149,9 +149,14 @@ Working today:
   distinction the single-run view already draws). Runs chunked on the main thread
   rather than a worker pool — a real benchmark showed replicates cost ~1–4ms each,
   so batching (with a live progress counter) keeps the UI responsive without the
-  added complexity. CI *coverage* (whether each replicate's own interval actually
-  contains the truth) is deliberately out of scope for now — see the confidence
-  intervals below.
+  added complexity. An optional **CI coverage** check goes further: for each
+  replicate, also bootstrap a small interval around *that replicate's own sample*
+  and check whether it contains the truth — coverage lands near 95% for the
+  well-specified estimators and dramatically below it for naive, METHODS.md's
+  "confidently wrong" property made numeric. Deliberately leaner than the
+  single-run panel below (percentile/basic only, no BCa — its jackknife pass would
+  multiply an already `replicates × inner-resamples` cost into infeasibility) and
+  off by default, since it's real added cost (seconds to tens of seconds).
 - **Confidence intervals** — for any ATE estimate, a nonparametric bootstrap on your
   *actual sample* (not a fresh population draw, unlike Monte Carlo mode — this is
   what you could compute from real data alone), with a toggle between three interval

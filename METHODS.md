@@ -239,9 +239,10 @@ contain it.
 Interval **coverage** — running Monte-Carlo mode and checking what fraction of
 repeated samples' CIs actually contain the true effect, the honest scorecard where a
 well-behaved 95% interval covers about 95% of the time and a confidently-wrong one
-covers far less — is a natural next step, not yet built: it needs a bootstrap nested
-inside every Monte Carlo replicate, a separate cost/perf question from the single-run
-CIs above.
+covers far less — is an opt-in checkbox in Monte-Carlo mode (percentile or basic
+only; BCa's jackknife pass would make the nested cost infeasible). On the canonical
+confounding example it shows exactly the pattern above made frequentist: gcomp's
+coverage lands near 95%, naive's is close to 0%.
 
 ## 6. Scope
 

@@ -4,17 +4,10 @@ A single running list of what's *not* built yet, kept next to the code instead o
 scattered across README/ARCHITECTURE/METHODS notes. This file is reviewed and updated
 as part of every push — see `CLAUDE.md`.
 
-Last reviewed: 2026-08-06 (through commit `6992366`, "Align docs with current
-implementation state" — bootstrap CIs).
+Last reviewed: 2026-08-07 (implementing CI coverage in Monte Carlo mode).
 
 ## Near-term (tracked in ARCHITECTURE.md, expected to ship)
 
-- **CI coverage in Monte Carlo mode** — whether each replicate's own confidence
-  interval actually contains the true effect. Needs a bootstrap nested inside every
-  Monte Carlo replicate (40,000+ estimator calls at default settings), its own
-  perf design the same way Monte Carlo mode's bias/RMSE and the single-run bootstrap
-  CIs each needed one before shipping. (Single-run CIs — percentile/basic/BCa — are
-  already shipped; this is specifically about coverage across repeated samples.)
 - **Validation table gaps** (README's cross-library check, `packages/validation/`):
   - g-computation dose–response vs. statsmodels (flexible basis)
   - IPW/AIPW vs. DoWhy/EconML — estimator is built; the cross-library fixture isn't

@@ -527,14 +527,19 @@ bidirected edges as dashed arcs.
   25 via `setTimeout` so the UI stays responsive — see §3's "as actually built"
   note); plot the sampling distribution of each applicable estimator's ATE estimate
   as an overlaid histogram, with a bias/RMSE readout against the correct truth
-  (population ATE, or the complier LATE specifically for 2SLS). **Shipped**: the
-  bias/RMSE part. **Not shipped**: CI *coverage* — checking whether each replicate's
-  *own* CI actually contains the truth needs a bootstrap nested inside every Monte
-  Carlo replicate (40,000+ estimator calls at default settings), its own perf design
-  the same way bias/RMSE needed one before anything could be layered on top,
-  deliberately deferred as a follow-up to the confidence intervals below (not the
-  same gap as before — single-run CIs are shipped now, only *coverage across
-  repeated samples* remains).
+  (population ATE, or the complier LATE specifically for 2SLS). **Shipped**, including
+  CI *coverage*: an opt-in checkbox (`coverageCheck.ts`) that, for each outer
+  replicate, also bootstraps a small CI around *that replicate's own sample*
+  (percentile or basic only — BCa's jackknife pass was excluded, see below) and
+  reports what fraction of replicates' CIs contained the truth. The original
+  "40,000+ estimator calls" cost estimate assumed reusing the single-run panel's
+  default inner-bootstrap count (200) naively; a real benchmark after fixing a 5x
+  redundancy bug (an early draft looped the inner bootstrap once per estimator key
+  instead of once per outer replicate, since one resample's `computeEstimateSet`
+  call already yields every active estimator) showed the honest cost is `R × inner`
+  calls with a lean default `inner = 30` — multi-second to tens-of-seconds, not
+  minutes. Batches shrink to 2 outer replicates per `setTimeout` tick (vs. 25) when
+  coverage is on, since each outer replicate now does much more work per tick.
 - **Confidence intervals:** a separate panel (`bootstrapCi.ts`), single-run ATE view
   only, toggling between three nonparametric bootstrap methods — percentile,
   basic/pivotal, and BCa. None strictly dominates: percentile is
