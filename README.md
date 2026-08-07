@@ -67,7 +67,7 @@ npm run validate        # runs packages/validation against committed fixtures
 | g-computation dose–response     | statsmodels (flexible basis)            | curve within tolerance            | ✅ |
 | IPW / AIPW ATE                  | DoWhy · EconML                          | point estimate                    | ✅ |
 | Graph testable implications     | networkx `find_minimal_d_separator`     | implied CI statements             | ✅ |
-| Worked examples                 | Hernán & Robins, *What If* datasets     | published effect estimates        | planned |
+| Worked examples                 | IHDP (Hill 2011) semi-synthetic benchmark | point estimate + known per-unit ground truth | ✅ |
 
 Three concrete examples, verified against independent reference implementations, not
 just our own internal tests:

@@ -496,7 +496,7 @@ suite runs in CI without Python; keep the generating scripts in-repo for provena
 | IV / 2SLS (LATE)               | linearmodels IV2SLS                         | coefficient + first-stage F         |
 | frontdoor                      | DoWhy frontdoor                             | point estimate                      |
 | d-separation / adjustment sets | dagitty                                     | set membership + testable implic.   |
-| worked examples                | Hernán & Robins "What If" datasets          | published effect estimates          |
+| worked examples                | IHDP (Hill 2011) semi-synthetic benchmark   | point estimate + known ground truth |
 
 "Every estimator validated against DoWhy/EconML/dagitty within tolerance" is a
 sentence that belongs in the README and on your résumé.

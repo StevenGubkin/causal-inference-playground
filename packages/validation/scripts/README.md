@@ -27,6 +27,7 @@ uv run python scripts/generate_gcomp_nonlinear_fixture.py
 uv run python scripts/generate_ipw_fixture.py
 uv run python scripts/generate_dsep_fixture.py
 uv run python scripts/generate_testable_implications_fixture.py
+uv run python scripts/generate_ihdp_fixture.py    # needs network access -- see below
 ```
 
 Each numeric-estimator script replicates the corresponding `.scm` model's
@@ -35,8 +36,8 @@ independent implementation), runs the reference library, and overwrites the
 matching `../fixtures/*.json`. `generate_dsep_fixture.py` is the exception —
 d-separation is a property of the graph, not the data, so it has no DGP/
 seed/N; it hand-builds the graph topology and checks it structurally.
-Commit the updated fixture alongside whatever change motivated regenerating
-it.
+`generate_ihdp_fixture.py` is a different exception — see below. Commit the
+updated fixture alongside whatever change motivated regenerating it.
 
 ## What's covered so far
 
@@ -86,9 +87,20 @@ it.
   `dSeparated` — not exact-set equality, since a graph can have multiple
   valid minimal separators and the two implementations' searches have no
   reason to pick the same one (see the script's docstring).
-
-Not yet implemented: the Hernán & Robins "What If" worked examples (needs
-sourcing/licensing the actual published datasets, and a CSV-loading path
-that bypasses the SCM/oracle framework entirely — a real dataset has no
-synthetic DGP to check estimators against, just the book's own published
-number).
+- `generate_ihdp_fixture.py` — the IHDP semi-synthetic benchmark (Hill
+  2011; real covariates from an actual RCT, a simulated outcome model on
+  top, so it ships genuine per-unit ground truth `mu0`/`mu1` rather than
+  just one paper's published number) vs. statsmodels/DoWhy/EconML. Replaces
+  the originally-planned Hernán & Robins "What If"/NHEFS worked example,
+  which had no do-calculus ground truth to check against. **The one script
+  (and the one `validateX()` in `src/index.ts`) that needs network
+  access**: the dataset's hosting repos carry no explicit license despite a
+  decade of pervasive academic reuse, a step down from this repo's
+  otherwise clean MIT/no-copyleft posture, so it's deliberately never
+  committed here in any form — both the generator and the TS validator
+  download the same CSV fresh each time. `npm run validate`'s IHDP section
+  degrades to a non-fatal `⚠ skipped` line (not a failure) if the network
+  is unavailable — verified directly, not just assumed. (`npm run validate`
+  isn't wired into any CI workflow today, confirmed by reading
+  `.github/workflows/` — this is already a manual, local developer action,
+  so the network dependency doesn't put an automated pipeline at risk.)
