@@ -5,25 +5,13 @@ to the code instead of scattered across README/ARCHITECTURE/METHODS notes. This 
 is reviewed and updated as part of every push — see `CLAUDE.md`.
 
 Last reviewed: 2026-08-08 (two independent critical-review agents evaluated the whole
-repo — one on correctness/rigor, one on product/UX/architecture. Fixed the two most
-severe findings directly: AIPW's plotted-curve sign bug, and IPW/AIPW's missing
-identifiability warning. Everything else they surfaced is catalogued below.)
+repo — one on correctness/rigor, one on product/UX/architecture. Fixed the three most
+severe findings directly: AIPW's plotted-curve sign bug, IPW/AIPW's missing
+identifiability warning, and the 6 missing distribution samplers that could
+white-screen the app. Everything else they surfaced is catalogued below.)
 
 ## Known bugs
 
-- **6 of 10 documented distributions have no sampler.** `Binomial`, `Categorical`,
-  `Exponential`, `Gamma`, `Beta`, `LogNormal` all pass DSL parse-time validation
-  (`packages/scm-dsl/src/distributions.ts`) but `packages/scm-engine/src/samplers.ts`'s
-  `SAMPLERS` table only implements `Normal`/`Bernoulli`/`Uniform`/`Poisson` — the other
-  six throw at `forwardSample` time. There is **no React error boundary anywhere in
-  `packages/app/src`**, so typing e.g. `X ~ Beta(2, 2)` — literally suggested by the
-  Freeform starter template's own help text — **crashes the whole app to a blank white
-  screen** with no user-facing message. This is the single highest-priority item on
-  this list: it's reachable by any first-time visitor doing something completely
-  ordinary. Fix options: implement the 6 missing samplers (standard inverse-CDF/
-  rejection sampling, nothing exotic), and/or add a top-level error boundary so any
-  future gap like this degrades to a message instead of a crash, and/or reject
-  unimplemented distributions at parse time instead of only documenting them as v1.
 - **Permalink "copy" has no error handling.** `PlaygroundView.tsx`'s `copyPermalink()`
   calls `navigator.clipboard.writeText(url).then(...)` with no `.catch()`. Reproduced
   live: with clipboard permission denied, the click does nothing — no "Copied!" flash,
@@ -75,8 +63,8 @@ identifiability warning. Everything else they surfaced is catalogued below.)
   `.scm` file or preset. Broken exclusion has at least a graph-validity test
   confirming `instrumentValid` catches it; broken monotonicity has no test or fixture
   anywhere.
-- **No error boundary anywhere in `packages/app`.** Beyond the distribution-sampler
-  crash above, every estimator call in the `run` `useMemo` (`gcompDoseResponse`,
+- **No error boundary anywhere in `packages/app`.** Every estimator call in the `run`
+  `useMemo` (`gcompDoseResponse`,
   `kernelRidgeDoseResponse`, `iv2sls`, `frontdoorDoseResponse`, `ipwAte`, `aipwAte`)
   runs unguarded except `stratifyResult` (the one place with a try/catch, specifically
   called out in a comment as the exception). A single thrown error from a pathological
