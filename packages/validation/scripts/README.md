@@ -14,7 +14,7 @@ Python.
 
 ```bash
 cd packages/validation
-uv sync                 # creates .venv, installs numpy/pandas/dowhy/statsmodels/linearmodels/networkx
+uv sync                 # creates .venv, installs numpy/pandas/dowhy/statsmodels/linearmodels/networkx/econml
 ```
 
 ## Regenerating a fixture
@@ -23,7 +23,10 @@ uv sync                 # creates .venv, installs numpy/pandas/dowhy/statsmodels
 uv run python scripts/generate_backdoor_fixture.py
 uv run python scripts/generate_iv_fixture.py
 uv run python scripts/generate_frontdoor_fixture.py
+uv run python scripts/generate_gcomp_nonlinear_fixture.py
+uv run python scripts/generate_ipw_fixture.py
 uv run python scripts/generate_dsep_fixture.py
+uv run python scripts/generate_testable_implications_fixture.py
 ```
 
 Each numeric-estimator script replicates the corresponding `.scm` model's
@@ -62,18 +65,30 @@ it.
   `is_d_separator`. ARCHITECTURE.md names dagitty (an R package) for this
   row; this uses networkx instead — same moralization algorithm dagitty and
   our own `dsep.ts` both use, no second language toolchain needed, and it
-  already ships transitively via DoWhy. Covers set membership only; the
-  "testable implications" (implied CI statements) half of ARCHITECTURE.md
-  §9's `testableImplications()` isn't implemented in `packages/graph` yet,
-  so there's nothing to cross-check there so far.
+  already ships transitively via DoWhy. Covers set membership only — see
+  `generate_testable_implications_fixture.py` below for the "implied CI
+  statements" half.
+- `generate_gcomp_nonlinear_fixture.py` — nonlinear.scm's flexible
+  (degree-6 polynomial) basis g-formula vs. statsmodels, at a grid of
+  points, plus the closed-form truth (`cos(x)`, exact here since `C`'s
+  contribution integrates to a constant offset independent of the
+  intervention).
+- `generate_ipw_fixture.py` — ipw-confounding.scm's IPW/AIPW ATE vs. DoWhy's
+  `backdoor.propensity_score_weighting` and EconML's `LinearDRLearner`
+  (doubly robust). Needs `econml` (in `pyproject.toml` since this fixture
+  was added).
+- `generate_testable_implications_fixture.py` — for every non-adjacent pair
+  of observed nodes in the same four models `generate_dsep_fixture.py`
+  covers, one minimal d-separating set via networkx's
+  `find_minimal_d_separator(G, x, y, restricted=observed)`, cross-checked
+  against `packages/graph/src/testable-implications.ts`. Existence
+  agreement plus re-validating networkx's chosen separator against our own
+  `dSeparated` — not exact-set equality, since a graph can have multiple
+  valid minimal separators and the two implementations' searches have no
+  reason to pick the same one (see the script's docstring).
 
-Not yet implemented: g-computation's flexible basis vs. statsmodels; IPW/AIPW
-vs. DoWhy/EconML (the `ipw`/`aipw` estimators themselves now exist in
-`packages/estimators/src/{ipw,aipw}.ts`, with their own golden tests against
-the engine's own oracle and a dedicated `ipw-confounding.scm` fixture model —
-what's missing is specifically the cross-library fixture: a
-`generate_ipw_fixture.py` against DoWhy/EconML, which would also need
-`econml` added to `pyproject.toml`, a dependency this repo doesn't carry
-yet); graph testable implications (needs `testableImplications()`
-implemented first); and the Hernán & Robins "What If" worked examples
-(needs sourcing/licensing the actual published datasets).
+Not yet implemented: the Hernán & Robins "What If" worked examples (needs
+sourcing/licensing the actual published datasets, and a CSV-loading path
+that bypasses the SCM/oracle framework entirely — a real dataset has no
+synthetic DGP to check estimators against, just the book's own published
+number).

@@ -64,9 +64,9 @@ npm run validate        # runs packages/validation against committed fixtures
 | IV / 2SLS (LATE)                | linearmodels `IV2SLS`                   | coefficient + classical first-stage F | ✅ |
 | d-separation & backdoor sets    | networkx `is_d_separator`               | set membership (validity + minimal set) | ✅ |
 | Front-door adjustment           | statsmodels two-stage OLS · DoWhy (structural ID only) | point estimate | ✅ |
-| g-computation dose–response     | statsmodels (flexible basis)            | curve within tolerance            | planned |
-| IPW / AIPW ATE                  | DoWhy · EconML                          | point estimate                    | planned (estimator built; cross-library fixture not yet generated) |
-| Graph testable implications     | dagitty / networkx                      | implied CI statements             | planned (`testableImplications()` not yet implemented) |
+| g-computation dose–response     | statsmodels (flexible basis)            | curve within tolerance            | ✅ |
+| IPW / AIPW ATE                  | DoWhy · EconML                          | point estimate                    | ✅ |
+| Graph testable implications     | networkx `find_minimal_d_separator`     | implied CI statements             | ✅ |
 | Worked examples                 | Hernán & Robins, *What If* datasets     | published effect estimates        | planned |
 
 Three concrete examples, verified against independent reference implementations, not
@@ -108,8 +108,8 @@ estimator is biased in both cases exactly as the theory predicts — which is th
 demonstration, made checkable.
 
 > Why this matters: the audience for this tool will probe it. Matching DoWhy,
-> linearmodels, and networkx within tolerance is what makes "here is the true effect"
-> a claim rather than a hope.
+> linearmodels, EconML, and networkx within tolerance is what makes "here is the true
+> effect" a claim rather than a hope.
 
 ## What it does
 

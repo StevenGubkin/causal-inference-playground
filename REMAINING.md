@@ -4,18 +4,17 @@ A single running list of what's *not* built yet, kept next to the code instead o
 scattered across README/ARCHITECTURE/METHODS notes. This file is reviewed and updated
 as part of every push — see `CLAUDE.md`.
 
-Last reviewed: 2026-08-07 (dropped npm publishing as a goal).
+Last reviewed: 2026-08-07 (filled in the g-comp/IPW-AIPW/testableImplications
+validation gaps).
 
 ## Near-term (tracked in ARCHITECTURE.md, expected to ship)
 
-- **Validation table gaps** (README's cross-library check, `packages/validation/`):
-  - g-computation dose–response vs. statsmodels (flexible basis)
-  - IPW/AIPW vs. DoWhy/EconML — estimator is built; the cross-library fixture isn't
-    generated yet (needs a new `econml` Python dependency)
-  - `testableImplications()` (graph package) vs. dagitty/networkx — function not
-    implemented yet
-  - Worked examples reproducing published Hernán & Robins (*What If*) effect
-    estimates
+- **Worked examples** (README's cross-library check, `packages/validation/`)
+  reproducing published Hernán & Robins (*What If*) effect estimates — the one
+  remaining validation-table gap. Different in kind from the other three (now
+  shipped): needs a real published dataset, not a synthetic DGP, so there's no
+  do-calculus "true effect" to check against, and it'd bypass the SCM/oracle
+  framework entirely (load a CSV, run the estimators directly against it).
 - **Embeddable `<iframe>`/web-component widget** — not started.
 
 ## Smaller gaps
