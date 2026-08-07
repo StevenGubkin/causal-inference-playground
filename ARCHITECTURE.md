@@ -511,6 +511,14 @@ bidirected edges as dashed arcs.
 
 - **Model entry:** a MathLive `<math-field>` per equation (real math notation), plus
   a plain code-editor view for the whole model. Offer both; keep them in sync.
+  **As actually built:** the MathLive fields are read-only display, one-directional
+  (source text → rendered math, never the reverse) — a deliberate choice
+  (`packages/app/src/MathField.tsx`'s own comment explains the ambiguity problem with
+  parsing edits back out of rendered math), confirmed as the intended permanent design
+  rather than a gap to close. The practical consequence: the "mobile keyboards"
+  rationale below for choosing MathLive doesn't apply — editing still happens in the
+  plain-text code editor, which the preview now renders *under* rather than above, so
+  it reads as a live preview of what you just typed rather than a target to edit into.
 - **DAG:** React Flow — draggable nodes, arrowed edges, auto-layout via dagre/elkjs.
   Selecting an adjustment set highlights nodes and the paths it blocks/opens. Every
   edge into the current treatment node is drawn red/dashed — exactly (and only) the
