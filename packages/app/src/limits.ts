@@ -31,3 +31,11 @@ export function clampReplicateCount(n: number): number {
   if (!Number.isFinite(n)) return 200;
   return Math.min(1000, Math.max(10, Math.round(n)));
 }
+
+// Deliberately tighter than clampReplicateCount -- this multiplies against
+// the outer Monte Carlo replicate count (CI coverage checking), so a [10,1000]
+// range here would let R x inner run away to tens of thousands of calls.
+export function clampCoverageInnerReplicates(n: number): number {
+  if (!Number.isFinite(n)) return 30;
+  return Math.min(100, Math.max(10, Math.round(n)));
+}

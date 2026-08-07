@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampBandwidth, clampDegree, clampLambda, clampNoiseSD, clampReplicateCount } from './limits.js';
+import { clampBandwidth, clampCoverageInnerReplicates, clampDegree, clampLambda, clampNoiseSD, clampReplicateCount } from './limits.js';
 
 describe('clampDegree', () => {
   it('clamps to [1, 9] and rounds', () => {
@@ -48,5 +48,16 @@ describe('clampReplicateCount', () => {
     expect(clampReplicateCount(50.6)).toBe(51);
     expect(clampReplicateCount(NaN)).toBe(200);
     expect(clampReplicateCount(Infinity)).toBe(200);
+  });
+});
+
+describe('clampCoverageInnerReplicates', () => {
+  it('clamps to [10, 100] and rounds', () => {
+    expect(clampCoverageInnerReplicates(30)).toBe(30);
+    expect(clampCoverageInnerReplicates(5)).toBe(10);
+    expect(clampCoverageInnerReplicates(500)).toBe(100);
+    expect(clampCoverageInnerReplicates(25.6)).toBe(26);
+    expect(clampCoverageInnerReplicates(NaN)).toBe(30);
+    expect(clampCoverageInnerReplicates(Infinity)).toBe(30);
   });
 });

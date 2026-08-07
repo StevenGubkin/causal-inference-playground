@@ -11,10 +11,12 @@ import { ComparisonChart } from './ComparisonChart';
 import { DagView } from './DagView';
 import { statementToLatex } from './equationLatex';
 import { downloadFile, modelToPython, modelToSvg, sampleToCsv } from './export/index.js';
-import { clampBandwidth, clampDegree, clampLambda, clampNoiseSD, clampReplicateCount } from './limits.js';
+import { clampBandwidth, clampCoverageInnerReplicates, clampDegree, clampLambda, clampNoiseSD, clampReplicateCount } from './limits.js';
 import { MathField } from './MathField';
 import { computeCI, runBootstrapReplicate, runJackknifeReplicate } from './bootstrapCi.js';
 import type { BootstrapCIResult, CIMethod } from './bootstrapCi.js';
+import { runCoverageReplicate, summarizeCoverage } from './coverageCheck.js';
+import type { CoverageCIMethod } from './coverageCheck.js';
 import { MonteCarloChart } from './MonteCarloChart.js';
 import { computeEstimateSet, runMonteCarloReplicate, summarizeReplicates } from './monteCarlo.js';
 import type { EstimatorConfig, MonteCarloConfig, MonteCarloReplicate } from './monteCarlo.js';
@@ -106,6 +108,10 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
   // adjustment changed out from under it -- a multi-tick loop, not a single
   // effect cleanup-cancelable call, so this can't rely on useEffect cleanup.
   const mcGeneration = useRef(0);
+  const [coverageEnabled, setCoverageEnabled] = useState(false);
+  const [coverageMethod, setCoverageMethod] = useState<CoverageCIMethod>('percentile');
+  const [coverageInnerReplicates, setCoverageInnerReplicates] = useState(30);
+  const [mcCoverageCis, setMcCoverageCis] = useState<Record<string, BootstrapCIResult | null>[]>([]);
   const [ciMethod, setCiMethod] = useState<CIMethod>('percentile');
   const [ciReplicateCount, setCiReplicateCount] = useState(200);
   const [ciResults, setCiResults] = useState<Record<string, BootstrapCIResult> | null>(null);
@@ -261,19 +267,33 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     };
     const total = mcReplicateCount;
     const baseRng = createRNG(seed).fork('monte-carlo');
-    const BATCH_SIZE = 25;
+    // Coverage checking makes each outer replicate do a whole inner bootstrap
+    // (see coverageCheck.ts), much pricier than a plain replicate -- a much
+    // smaller batch keeps progress updates arriving at roughly the same
+    // cadence as the non-coverage case instead of going quiet for seconds.
+    const BATCH_SIZE = coverageEnabled ? 2 : 25;
     const acc: MonteCarloReplicate[] = [];
+    const coverageAcc: Record<string, BootstrapCIResult | null>[] = [];
     setMcRunning(true);
     setMcProgress(0);
     setMcReplicates([]);
+    setMcCoverageCis([]);
 
     function step(i: number) {
       if (generation !== mcGeneration.current) return; // superseded by a newer run or config change
       const end = Math.min(i + BATCH_SIZE, total);
       for (let r = i; r < end; r++) {
-        acc.push(runMonteCarloReplicate(config, baseRng.fork(`mc-rep-${r}`)));
+        const rng = baseRng.fork(`mc-rep-${r}`);
+        if (coverageEnabled) {
+          const { estimates, cis } = runCoverageReplicate(config, coverageMethod, coverageInnerReplicates, rng);
+          acc.push(estimates);
+          coverageAcc.push(cis);
+        } else {
+          acc.push(runMonteCarloReplicate(config, rng));
+        }
       }
       setMcReplicates([...acc]);
+      if (coverageEnabled) setMcCoverageCis([...coverageAcc]);
       setMcProgress(end);
       if (end < total) setTimeout(() => step(end), 0);
       else setMcRunning(false);
@@ -524,32 +544,76 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
     setMcReplicates([]);
     setMcRunning(false);
     setMcProgress(0);
+    setMcCoverageCis([]);
     ciGeneration.current += 1;
     setCiResults(null);
     setCiRunning(false);
     setCiProgress(0);
   }, [run]);
 
+  // Coverage is only meaningful once a coverage-enabled run has actually
+  // produced per-replicate CIs (mcCoverageCis); otherwise it's null and the
+  // JSX simply doesn't render a coverage readout for that series.
+  function coverageFor(key: keyof MonteCarloReplicate, trueValue: number) {
+    return coverageEnabled && mcCoverageCis.length > 0 ? summarizeCoverage(mcCoverageCis.map((c) => c[key] ?? null), trueValue) : null;
+  }
+
   const mcSeries = run?.ate
     ? [
-        { key: 'naive', label: 'naive', color: '#ef4444', summary: summarizeReplicates(mcReplicates.map((r) => r.naive), run.ate.true) },
+        { key: 'naive', label: 'naive', color: '#ef4444', summary: summarizeReplicates(mcReplicates.map((r) => r.naive), run.ate.true), coverage: coverageFor('naive', run.ate.true) },
         run.adjustment.length > 0
-          ? { key: 'gcomp', label: 'g-comp', color: '#2563eb', summary: summarizeReplicates(mcReplicates.map((r) => r.gcomp), run.ate.true) }
+          ? {
+              key: 'gcomp',
+              label: 'g-comp',
+              color: '#2563eb',
+              summary: summarizeReplicates(mcReplicates.map((r) => r.gcomp), run.ate.true),
+              coverage: coverageFor('gcomp', run.ate.true),
+            }
           : null,
         run.stratifyResult || run.stratifyError
-          ? { key: 'stratify', label: 'stratify', color: '#0d9488', summary: summarizeReplicates(mcReplicates.map((r) => r.stratify), run.ate.true) }
+          ? {
+              key: 'stratify',
+              label: 'stratify',
+              color: '#0d9488',
+              summary: summarizeReplicates(mcReplicates.map((r) => r.stratify), run.ate.true),
+              coverage: coverageFor('stratify', run.ate.true),
+            }
           : null,
         run.isBinaryTreatment
-          ? { key: 'ipw', label: 'IPW', color: '#d97706', summary: summarizeReplicates(mcReplicates.map((r) => r.ipw), run.ate.true) }
+          ? {
+              key: 'ipw',
+              label: 'IPW',
+              color: '#d97706',
+              summary: summarizeReplicates(mcReplicates.map((r) => r.ipw), run.ate.true),
+              coverage: coverageFor('ipw', run.ate.true),
+            }
           : null,
         run.isBinaryTreatment
-          ? { key: 'aipw', label: 'AIPW', color: '#4338ca', summary: summarizeReplicates(mcReplicates.map((r) => r.aipw), run.ate.true) }
+          ? {
+              key: 'aipw',
+              label: 'AIPW',
+              color: '#4338ca',
+              summary: summarizeReplicates(mcReplicates.map((r) => r.aipw), run.ate.true),
+              coverage: coverageFor('aipw', run.ate.true),
+            }
           : null,
         effectiveInstrument && run.trueLate && Number.isFinite(run.trueLate.estimate)
-          ? { key: 'iv', label: '2SLS', color: '#7c3aed', summary: summarizeReplicates(mcReplicates.map((r) => r.iv), run.trueLate.estimate) }
+          ? {
+              key: 'iv',
+              label: '2SLS',
+              color: '#7c3aed',
+              summary: summarizeReplicates(mcReplicates.map((r) => r.iv), run.trueLate.estimate),
+              coverage: coverageFor('iv', run.trueLate.estimate),
+            }
           : null,
         effectiveMediator
-          ? { key: 'frontdoor', label: 'front-door', color: '#db2777', summary: summarizeReplicates(mcReplicates.map((r) => r.frontdoor), run.ate.true) }
+          ? {
+              key: 'frontdoor',
+              label: 'front-door',
+              color: '#db2777',
+              summary: summarizeReplicates(mcReplicates.map((r) => r.frontdoor), run.ate.true),
+              coverage: coverageFor('frontdoor', run.ate.true),
+            }
           : null,
       ].filter((s): s is NonNullable<typeof s> => s !== null)
     : [];
@@ -930,10 +994,47 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                     onChange={(e) => setMcReplicateCount(clampReplicateCount(e.target.valueAsNumber))}
                   />
                 </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input type="checkbox" checked={coverageEnabled} onChange={(e) => setCoverageEnabled(e.target.checked)} />
+                  <span style={{ color: '#475569' }}>check CI coverage (slower)</span>
+                </label>
+                {coverageEnabled && (
+                  <>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <input type="radio" name="coverageMethod" checked={coverageMethod === 'percentile'} onChange={() => setCoverageMethod('percentile')} />
+                      <span style={{ color: '#475569' }}>percentile</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <input type="radio" name="coverageMethod" checked={coverageMethod === 'basic'} onChange={() => setCoverageMethod('basic')} />
+                      <span style={{ color: '#475569' }}>basic</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ color: '#475569' }}>inner resamples</span>
+                      <input
+                        type="number"
+                        value={coverageInnerReplicates}
+                        min={10}
+                        max={100}
+                        step={5}
+                        style={{ width: 64 }}
+                        onChange={(e) => setCoverageInnerReplicates(clampCoverageInnerReplicates(e.target.valueAsNumber))}
+                      />
+                    </label>
+                  </>
+                )}
                 <button type="button" onClick={runMonteCarlo} disabled={mcRunning}>
                   {mcRunning ? `Running... (${mcProgress}/${mcReplicateCount})` : 'Run Monte Carlo'}
                 </button>
               </div>
+
+              {coverageEnabled && (
+                <p style={{ margin: '0 0 8px', fontSize: 12.5, color: '#64748b' }}>
+                  For each replicate, also bootstraps a small confidence interval around that replicate&apos;s own sample and checks whether it
+                  contains the true effect -- coverage should land near 95% for a well-specified estimator, and visibly lower for a misspecified
+                  one. Multiplies cost by the inner resample count above (a full run can take several seconds to tens of seconds); BCa isn&apos;t
+                  offered here since its jackknife pass would make this infeasible.
+                </p>
+              )}
 
               {mcReplicates.length > 0 && (
                 <>
@@ -942,6 +1043,12 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                       <div key={s.key} style={{ color: s.color }}>
                         {s.label}: bias {s.summary.bias.toFixed(3)}, RMSE {s.summary.rmse.toFixed(3)}
                         {s.summary.failures > 0 && ` (${s.summary.failures}/${mcReplicates.length} failed)`}
+                        {s.coverage && !Number.isNaN(s.coverage.rate) && (
+                          <span style={{ color: Math.abs(s.coverage.rate - 0.95) <= 0.1 ? '#15803d' : '#b45309' }}>
+                            {' | coverage '}
+                            {(s.coverage.rate * 100).toFixed(1)}% (target 95%)
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
