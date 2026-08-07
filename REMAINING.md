@@ -4,7 +4,7 @@ A single running list of what's *not* built yet, kept next to the code instead o
 scattered across README/ARCHITECTURE/METHODS notes. This file is reviewed and updated
 as part of every push — see `CLAUDE.md`.
 
-Last reviewed: 2026-08-07 (implementing CI coverage in Monte Carlo mode).
+Last reviewed: 2026-08-07 (dropped npm publishing as a goal).
 
 ## Near-term (tracked in ARCHITECTURE.md, expected to ship)
 
@@ -17,8 +17,6 @@ Last reviewed: 2026-08-07 (implementing CI coverage in Monte Carlo mode).
   - Worked examples reproducing published Hernán & Robins (*What If*) effect
     estimates
 - **Embeddable `<iframe>`/web-component widget** — not started.
-- **npm publishing** of `scm-engine`/`estimators` as standalone packages — not
-  started; `README.md`'s package names are still placeholders.
 
 ## Smaller gaps
 

@@ -64,8 +64,12 @@ These are requirements, tested and shipped, not aspirations.
 4. **A visceral demo.** An interactive paradox gallery where dragging one slider
    flips an estimate's sign or breaks CI coverage, live (sections 11, 13). This is
    what actually gets shared.
-5. **Permissively licensed and publishable.** MIT throughout; the `engine` and
-   `estimators` packages are independently publishable to npm (section 3, 14).
+5. **Permissively licensed.** MIT throughout; the `engine` and `estimators`
+   packages carry no UI dependency and are structurally independent of `app`
+   (section 3) — reusable within this repo (already are, by `validation/`) even
+   though standalone npm publishing isn't a goal (the realistic external audience
+   for a TypeScript causal-inference library is small; Python/R already has DoWhy,
+   EconML, statsmodels).
 6. **Honest uncertainty.** CIs reflect real sampling variability, so the tool can
    *demonstrate* confidently-wrong misspecification rather than hide it (section 8).
 
@@ -113,9 +117,10 @@ Chosen libraries (rationale in section 14):
   is not acceptable — reproducible permalinks and common random numbers depend on an
   explicit seed (INVARIANTs, sections 6, 12).
 
-`scm-engine` and `estimators` must have zero UI dependencies so they can ship as
-standalone npm packages (`@you/scm-engine`, `@you/causal-estimators`). That is both
-good architecture and a portfolio artifact.
+`scm-engine` and `estimators` must have zero UI dependencies — good architecture on
+its own (testable in isolation, already reused by `validation/` without `app`), and
+what makes the worker-boundary design below possible regardless of whether these
+ever ship as standalone npm packages (not currently a goal — see REMAINING.md).
 
 The main thread never constructs a compiled `Model` (§5) directly — `CompiledExpr`'s
 `eval` closures aren't structured-clone-safe, so a compiled `Model` can't cross a
@@ -637,9 +642,6 @@ measurement error / attenuation · confidently-wrong CIs under misspecification.
 
 Cheap moves that make this read as expert-grade rather than a class project:
 
-- Publish `@you/scm-engine` and `@you/causal-estimators` to npm with typings and
-  tests. "I published a validated causal-inference estimator library" is a strong
-  line.
 - Put the cross-library validation table (section 10b) front and center in the README
   with green checks; link the generating scripts.
 - Write a short methods page: the estimands, the identification strategies, the

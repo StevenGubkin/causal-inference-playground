@@ -181,12 +181,11 @@ are hard for them for the same reason they are hard in reality.
 
 ## Packages
 
-The engine and estimators carry no UI dependency; standalone npm publishing is
-planned but hasn't happened yet, so these names are placeholders, not installable
-packages:
-
-- `@TODO/scm-engine` — SCM IR, distributions, forward and interventional sampling.
-- `@TODO/causal-estimators` — the estimators and the identifiability gate.
+`scm-engine` (SCM IR, distributions, forward and interventional sampling) and
+`estimators` (the estimators and the identifiability gate) carry no UI dependency —
+by design, not in service of publishing them standalone (not a goal; see
+[REMAINING.md](./REMAINING.md)), but because it's what lets `packages/validation/`
+exercise them directly, without `app`.
 
 ## Develop
 
