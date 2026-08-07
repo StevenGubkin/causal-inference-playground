@@ -1,0 +1,16 @@
+{
+  "problem": "IHDP semi-synthetic benchmark (Hill 2011)",
+  "source_url": "https://raw.githubusercontent.com/AMLab-Amsterdam/CEVAE/master/datasets/IHDP/csv/ihdp_npci_1.csv",
+  "n": 747,
+  "n_treated": 139,
+  "n_control": 608,
+  "true_ate": 4.016066896118338,
+  "statsmodels_adjusted_estimate": 3.928671750872715,
+  "dowhy_ipw_estimate": 4.0286533828119415,
+  "econml_aipw_estimate": 3.6857683566120687,
+  "references": {
+    "statsmodels": "0.14.6",
+    "dowhy": "0.14",
+    "econml": "0.17.0"
+  }
+}

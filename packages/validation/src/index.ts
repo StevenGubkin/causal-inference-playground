@@ -21,6 +21,7 @@ import { backdoorValid, dSeparated, findBackdoorSet, frontdoorValid, testableImp
 import { parseModel } from 'scm-dsl';
 import type { Model } from 'scm-dsl';
 import { createRNG, forwardSample } from 'scm-engine';
+import type { ObservedSample } from 'scm-engine';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXAMPLES_DIR = join(__dirname, '../../examples/models');
@@ -258,6 +259,93 @@ function validateTestableImplications(): void {
   }
 }
 
+interface IhdpFixture {
+  source_url: string;
+  n: number;
+  true_ate: number;
+  statsmodels_adjusted_estimate: number;
+  dowhy_ipw_estimate: number;
+  econml_aipw_estimate: number;
+}
+
+const IHDP_COVARIATES = Array.from({ length: 25 }, (_, i) => `x${i + 1}`);
+// Unlike the synthetic fixtures, TS and Python here run against the
+// *identical* fixed 747 rows (no independent sampling on either side), so
+// this doesn't need to absorb Monte Carlo noise -- just genuine finite-
+// sample estimation error at n=747 with 25 covariates, recovering a
+// specific real quantity rather than converging in a law-of-large-numbers
+// sense. Observed directly when building this fixture: naive/adjusted
+// estimates land within ~0.09 of the true ATE, well inside this margin.
+const IHDP_TRUTH_TOLERANCE = 0.3;
+
+/** No header row: treatment, y_factual, y_cfactual, mu0, mu1, x1..x25 --
+ * verified directly against the real file when this fixture was built (not
+ * assumed from documentation alone). Only the columns our estimators need
+ * (treatment, y_factual, x1..x25) are kept. */
+function parseIhdpCsv(csv: string): ObservedSample {
+  const rows = csv
+    .trim()
+    .split('\n')
+    .map((line) => line.split(',').map(Number));
+  const n = rows.length;
+  const columns = new Map<string, Float64Array>();
+  const colIndex: Record<string, number> = { treatment: 0, y_factual: 1 };
+  IHDP_COVARIATES.forEach((name, i) => (colIndex[name] = 5 + i));
+  for (const [name, idx] of Object.entries(colIndex)) {
+    const col = new Float64Array(n);
+    for (let r = 0; r < n; r++) col[r] = rows[r]![idx]!;
+    columns.set(name, col);
+  }
+  return { n, columns };
+}
+
+/** The one network-dependent check in this suite (see the IHDP validation
+ * plan for why the dataset itself isn't committed -- unclear licensing on
+ * the hosting repos, despite a decade of pervasive academic reuse). A
+ * missing network shouldn't fail an otherwise-passing local
+ * `npm run validate`, so this is a soft skip, not a hard failure, on fetch
+ * errors specifically -- an actual value mismatch after a successful fetch
+ * still counts as a real failure like every other check. */
+async function validateIhdp(): Promise<void> {
+  console.log('\n--- IHDP semi-synthetic benchmark (Hill 2011) vs. statsmodels/DoWhy/EconML ---');
+  const fixture = loadFixture<IhdpFixture>('ihdp.json');
+
+  let csv: string;
+  try {
+    const response = await fetch(fixture.source_url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    csv = await response.text();
+  } catch (err) {
+    console.log(`⚠ skipped (network unavailable): IHDP validation -- ${(err as Error).message}`);
+    return;
+  }
+
+  const observed = parseIhdpCsv(csv);
+  const points = [0, 1];
+
+  const gcompCurve = gcompDoseResponse(observed, 'treatment', 'y_factual', IHDP_COVARIATES, points);
+  const gcompEstimate = gcompCurve.ys[1]! - gcompCurve.ys[0]!;
+  check('gcompDoseResponse vs. statsmodels adjusted OLS', gcompEstimate, fixture.statsmodels_adjusted_estimate);
+  check('gcompDoseResponse vs. true ATE (mean mu1-mu0)', gcompEstimate, fixture.true_ate, IHDP_TRUTH_TOLERANCE);
+
+  const ipw = ipwAte(observed, 'treatment', 'y_factual', IHDP_COVARIATES, points);
+  check('ipwAte vs. DoWhy backdoor.propensity_score_weighting', ipw.estimate, fixture.dowhy_ipw_estimate);
+  check('ipwAte vs. true ATE (mean mu1-mu0)', ipw.estimate, fixture.true_ate, IHDP_TRUTH_TOLERANCE);
+
+  const aipw = aipwAte(observed, 'treatment', 'y_factual', IHDP_COVARIATES, points);
+  // Not a check() -- EconML's LinearDRLearner cross-fits (default cv=2) and
+  // ours doesn't, a genuine methodological difference at this real n=747,
+  // 25-covariate scale, not implementation noise on the same algorithm:
+  // observed directly when building this fixture, our own (non-cross-fit)
+  // aipwAte lands *closer* to the true ATE (diff ~0.05) than EconML's own
+  // cross-fit estimate does (diff ~0.33). Forcing numerical agreement
+  // between two different algorithms wouldn't test anything meaningful;
+  // the assertion that matters is the true-ATE check right below, which
+  // aipwAte passes comfortably (well inside even the standard tolerance).
+  console.log(`  (FYI, not asserted -- different algorithm) aipwAte: ${aipw.estimate.toFixed(4)} vs. EconML LinearDRLearner: ${fixture.econml_aipw_estimate.toFixed(4)}`);
+  check('aipwAte vs. true ATE (mean mu1-mu0)', aipw.estimate, fixture.true_ate, IHDP_TRUTH_TOLERANCE);
+}
+
 console.log(`Validating against fixtures in ${FIXTURES_DIR} (n=${N})`);
 validateBackdoor();
 validateNaive();
@@ -267,6 +355,7 @@ validateGcompNonlinear();
 validateIpwAipw();
 validateDsep();
 validateTestableImplications();
+await validateIhdp();
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 if (failures > 0) process.exit(1);
