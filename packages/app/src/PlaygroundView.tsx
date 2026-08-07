@@ -677,25 +677,6 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
         </label>
       </div>
 
-      {equationStatements.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-            padding: '10px 12px',
-            marginBottom: 8,
-            border: '1px solid #cbd5e1',
-            borderRadius: 8,
-            boxSizing: 'border-box',
-          }}
-        >
-          {equationStatements.map((stmt) => (
-            <MathField key={stmt.line} latex={statementToLatex(stmt)} />
-          ))}
-        </div>
-      )}
-
       <textarea
         value={source}
         onChange={(e) => setSource(e.target.value)}
@@ -713,6 +694,25 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
           resize: 'vertical',
         }}
       />
+
+      {equationStatements.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            padding: '10px 12px',
+            marginTop: 8,
+            border: '1px solid #cbd5e1',
+            borderRadius: 8,
+            boxSizing: 'border-box',
+          }}
+        >
+          {equationStatements.map((stmt) => (
+            <MathField key={stmt.line} latex={statementToLatex(stmt)} />
+          ))}
+        </div>
+      )}
 
       {!parsed.ok && (
         <pre style={{ background: '#fef2f2', color: '#991b1b', padding: 12, borderRadius: 8, marginTop: 12 }}>
@@ -965,9 +965,15 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
               </div>
             </div>
           )}
+          {run.ipwResult && !run.gate.ok && (
+            <p style={{ margin: '0 0 4px', fontSize: 12.5, color: '#991b1b' }}>
+              ✗ IPW shares g-comp&apos;s backdoor requirement — the current adjustment set is invalid ({run.gate.reason}), so this estimate is
+              biased too, regardless of overlap.
+            </p>
+          )}
 
           {run.aipwResult && (
-            <div style={{ display: 'flex', gap: 24, margin: '0 0 16px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 24, margin: run.gate.ok ? '0 0 16px' : '0 0 4px', fontFamily: 'ui-monospace, monospace', flexWrap: 'wrap' }}>
               <div>
                 AIPW ATE: <strong style={{ color: '#4338ca' }}>{run.aipwResult.estimate.toFixed(3)}</strong>
               </div>
@@ -976,6 +982,12 @@ export function PlaygroundView({ initialSource, initialTreatment, initialOutcome
                 {run.aipwResult.effectiveSampleSizeControl.toFixed(0)}
               </div>
             </div>
+          )}
+          {run.aipwResult && !run.gate.ok && (
+            <p style={{ margin: '0 0 16px', fontSize: 12.5, color: '#991b1b' }}>
+              ✗ AIPW shares g-comp&apos;s backdoor requirement — the current adjustment set is invalid ({run.gate.reason}), so this estimate is
+              biased too, regardless of overlap.
+            </p>
           )}
 
           {estimand === 'ate' && run.ate && (

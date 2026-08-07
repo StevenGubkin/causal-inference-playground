@@ -72,7 +72,14 @@ export function aipwAte(
     const p = clippedPropensities[i]!;
     const aug = treatmentCol[i] === 1 ? (outcomeCol[i]! - mu1) / p : -(outcomeCol[i]! - mu0) / (1 - p);
     sumTau += mu1 - mu0 + aug;
-    sumMu0 += mu0 + (treatmentCol[i] === 1 ? 0 : -(outcomeCol[i]! - mu0) / (1 - p));
+    // NOT the same sign as `aug` above: tau = mu1_aug - mu0_aug, so the
+    // control-arm term is *subtracted* there as an algebraic consequence of
+    // that subtraction, not because mu0's own augmentation is negative. In
+    // isolation, mu0's doubly-robust correction is ADDED for control units:
+    // mu0_i + (1-X_i)(Y_i-mu0_i)/(1-p_i). Mixing up these two signs
+    // previously shifted the plotted baseline (this.ys) while leaving the
+    // scalar ATE (sumTau, correctly signed above) unaffected.
+    sumMu0 += mu0 + (treatmentCol[i] === 1 ? 0 : (outcomeCol[i]! - mu0) / (1 - p));
   }
   const estimate = sumTau / n;
   const baseline = sumMu0 / n;

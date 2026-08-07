@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRNG, doContrast, forwardSample } from 'scm-engine';
+import { createRNG, doContrast, doResponse, forwardSample } from 'scm-engine';
 import { parseModel } from 'scm-dsl';
 import { describe, expect, it } from 'vitest';
 import { aipwAte } from './aipw.js';
@@ -29,6 +29,33 @@ describe('golden test: AIPW recovers the true ATE on ipw-confounding.scm (~2.0)'
     const trueAte = doContrast(model, 'X', 'Y', 0, 1, 20000, createRNG(124));
     const result = aipwAte(observed, 'X', 'Y', ['Z'], [0, 1]);
     expect(result.estimate).toBeCloseTo(trueAte, 0);
+  });
+});
+
+describe('regression: the plotted curve (.ys), not just .estimate, must match truth', () => {
+  // Guards against a real bug that shipped once: sumTau (-> .estimate) had
+  // the correct sign, but sumMu0 (-> .ys' baseline) reused sumTau's sign
+  // convention for the control-arm augmentation instead of its own --
+  // invisible under a correctly-specified outcome model (residuals average
+  // out either way), but a large, clearly-wrong baseline under a
+  // misspecified one. Checking only `.estimate` (as the golden tests above
+  // do) can't catch this; the curve itself has to be asserted.
+  it('.ys[0]/.ys[1] track the oracle E[Y|do(X=0)]/E[Y|do(X=1)], outcome model correctly specified', () => {
+    const { model, observed } = loadIpwConfoundingSample(20000, 123);
+    const trueCurve = doResponse(model, 'X', 'Y', [0, 1], 20000, createRNG(124));
+    const result = aipwAte(observed, 'X', 'Y', ['Z'], [0, 1]);
+    expect(result.ys[0]).toBeCloseTo(trueCurve.ys[0]!, 0);
+    expect(result.ys[1]).toBeCloseTo(trueCurve.ys[1]!, 0);
+  });
+
+  it('.ys[0] still tracks truth when the outcome model is deliberately misspecified (propensity correct)', () => {
+    const { model, observed } = loadIpwConfoundingSample(50000, 123);
+    const trueCurve = doResponse(model, 'X', 'Y', [0, 1], 20000, createRNG(124));
+    // outcomeSet=[] -- an intercept-and-treatment-only outcome model, the
+    // exact scenario that exposed the sign bug (buggy baseline came out
+    // ~-1.40 against a true value of ~0, vs. ~-0.02 correctly signed).
+    const result = aipwAte(observed, 'X', 'Y', ['Z'], [0, 1], ['Z'], []);
+    expect(result.ys[0]).toBeCloseTo(trueCurve.ys[0]!, 0);
   });
 });
 
